@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integral — usability tests for the slice you just built</title>
+<meta name="description" content="Paste HTML or drop a zip, get a shareable usability-test link. Session replay, click heatmaps, and task success signals. Testers never need an account.">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/landing.css">
+</head>
+<body>
+
+<nav class="lnav">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <div class="lnav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#pricing">Pricing</a>
+  </div>
+  <a class="btn js-signin" href="/auth/github">Sign in</a>
+</nav>
+
+<header class="hero">
+  <div class="hero-copy">
+    <h1>Usability tests for the slice you just built</h1>
+    <p class="hero-sub">Paste HTML or drop a zip → get a shareable test link. Watch real
+    people attempt your task — session replay, click heatmaps, success signals.
+    Testers never need an account.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary js-signin" href="/auth/github">Sign in with GitHub</a>
+      <a class="btn" href="#how">See how it works</a>
+    </div>
+    <p class="muted">Free plan · no credit card · first test live in ~2 minutes</p>
+  </div>
+  <div class="hero-visual" aria-hidden="true">
+    <svg viewBox="0 0 520 360" role="img" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="heat-hot" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#dc2626" stop-opacity="0.85"/>
+          <stop offset="45%" stop-color="#f59e0b" stop-opacity="0.55"/>
+          <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="heat-warm" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="heat-cool" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="#4f46e5" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <!-- browser frame -->
+      <rect x="1" y="1" width="518" height="358" rx="12" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+      <!-- title bar -->
+      <rect x="2" y="2" width="516" height="38" rx="11" fill="#f7f7f8"/>
+      <rect x="2" y="28" width="516" height="12" fill="#f7f7f8"/>
+      <circle cx="24" cy="21" r="5" fill="#fca5a5"/>
+      <circle cx="42" cy="21" r="5" fill="#fcd34d"/>
+      <circle cx="60" cy="21" r="5" fill="#86efac"/>
+      <rect x="84" y="11" width="280" height="20" rx="10" fill="#ffffff" stroke="#e5e7eb"/>
+      <text x="98" y="25" font-family="ui-monospace, monospace" font-size="11" fill="#6b7280">run.integral.app/t/3f9c</text>
+      <!-- mock artifact page -->
+      <rect x="24" y="58" width="200" height="16" rx="4" fill="#e5e7eb"/>
+      <rect x="24" y="86" width="300" height="9" rx="4" fill="#eef0f2"/>
+      <rect x="24" y="102" width="260" height="9" rx="4" fill="#eef0f2"/>
+      <rect x="24" y="132" width="224" height="120" rx="8" fill="#f3f4f6"/>
+      <rect x="40" y="148" width="120" height="10" rx="4" fill="#dfe2e6"/>
+      <rect x="40" y="168" width="180" height="8" rx="4" fill="#e8eaed"/>
+      <rect x="40" y="184" width="150" height="8" rx="4" fill="#e8eaed"/>
+      <rect x="40" y="216" width="96" height="24" rx="6" fill="#4f46e5"/>
+      <rect x="272" y="132" width="224" height="120" rx="8" fill="#f3f4f6"/>
+      <rect x="288" y="148" width="120" height="10" rx="4" fill="#dfe2e6"/>
+      <rect x="288" y="168" width="180" height="8" rx="4" fill="#e8eaed"/>
+      <rect x="288" y="184" width="150" height="8" rx="4" fill="#e8eaed"/>
+      <rect x="288" y="216" width="96" height="24" rx="6" fill="#ffffff" stroke="#d3d6db"/>
+      <!-- click heatmap -->
+      <circle cx="90" cy="228" r="52" fill="url(#heat-hot)"/>
+      <circle cx="122" cy="220" r="34" fill="url(#heat-warm)"/>
+      <circle cx="336" cy="228" r="30" fill="url(#heat-cool)"/>
+      <circle cx="180" cy="92" r="26" fill="url(#heat-cool)"/>
+      <!-- replay timeline -->
+      <rect x="24" y="288" width="472" height="48" rx="8" fill="#1a1a2e"/>
+      <path d="M46 302 L46 322 L62 312 Z" fill="#ffffff"/>
+      <rect x="78" y="309" width="380" height="6" rx="3" fill="#3a3a55"/>
+      <rect x="78" y="309" width="238" height="6" rx="3" fill="#4f46e5"/>
+      <circle cx="316" cy="312" r="7" fill="#ffffff"/>
+      <rect x="150" y="304" width="2" height="16" fill="#16a34a"/>
+      <rect x="236" y="304" width="2" height="16" fill="#16a34a"/>
+      <rect x="290" y="304" width="2" height="16" fill="#f59e0b"/>
+      <text x="470" y="317" font-family="ui-monospace, monospace" font-size="11" fill="#9ca3af" text-anchor="end">1:24</text>
+    </svg>
+  </div>
+</header>
+
+<section id="features" class="lsection">
+  <h2>Everything you need to watch someone actually use it</h2>
+  <div class="lgrid">
+    <div class="card lfeature">
+      <div class="licon">⇪</div>
+      <h3>You are the runtime</h3>
+      <p class="muted">Pull straight from a GitHub repo, paste self-contained HTML, or
+      upload a zip or folder of your build. Integral hosts it and hands you a live
+      test link — no staging environment, no deploy.</p>
+    </div>
+    <div class="card lfeature">
+      <div class="licon">▶</div>
+      <h3>Session replay &amp; heatmaps</h3>
+      <p class="muted">Every session is recorded with rrweb. Scrub through pixel-perfect
+      replays of real attempts, and see click heatmaps of where people actually
+      went — and where they rage-clicked.</p>
+    </div>
+    <div class="card lfeature">
+      <div class="licon">✓</div>
+      <h3>Task success, measured</h3>
+      <p class="muted">Give testers a task and define what success looks like — a click
+      on the right element, a page reached. Get completion rates, timings, and
+      full JSON/CSV export.</p>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="lsection lsection-alt">
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li>
+      <span class="stepnum">1</span>
+      <h3>Upload the slice</h3>
+      <p class="muted">Paste HTML or drop a zip/folder of your front-end build.
+      Write the task you want tested.</p>
+    </li>
+    <li>
+      <span class="stepnum">2</span>
+      <h3>Share the link</h3>
+      <p class="muted">Send it to teammates, users, or a community. Testers open it in
+      a browser — anonymous, consent-gated, no account, no install.</p>
+    </li>
+    <li>
+      <span class="stepnum">3</span>
+      <h3>Watch what happened</h3>
+      <p class="muted">Replays, heatmaps, and success signals land on your results page
+      as responses come in. Fix the confusing part, ship.</p>
+    </li>
+  </ol>
+</section>
+
+<section id="pricing" class="lsection">
+  <h2>Pricing</h2>
+  <p class="lsub muted">Start free. Upgrade when a test outgrows the limits.</p>
+  <!-- Pro price must match the Stripe price behind STRIPE_PRICE_ID (see docs/go-to-market.md). -->
+  <div class="lgrid pricing">
+    <div class="card price-card">
+      <h3>Free</h3>
+      <div class="price">$0<span class="muted"> / month</span></div>
+      <ul>
+        <li>1 active test</li>
+        <li>25 responses / month</li>
+        <li>14-day session retention</li>
+        <li>10 MB artifacts</li>
+        <li>Test links expire after 14 days</li>
+      </ul>
+      <a class="btn js-signin" href="/auth/github">Start free</a>
+    </div>
+    <div class="card price-card featured">
+      <span class="badge">Most popular</span>
+      <h3>Pro</h3>
+      <div class="price">$29<span class="muted"> / month</span></div>
+      <ul>
+        <li>10 active tests</li>
+        <li>500 responses / month</li>
+        <li>1-year session retention</li>
+        <li>50 MB artifacts</li>
+        <li>Test links never expire</li>
+      </ul>
+      <a class="btn btn-primary js-signin" href="/auth/github">Get started</a>
+    </div>
+  </div>
+</section>
+
+<footer class="lfooter">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
+  <span style="flex:1"></span>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+</footer>
+
+<script>
+// Sign-in links default to GitHub OAuth so the page works without JS. In local
+// dev (no GitHub app configured) swap them to the dev-mode login.
+(function () {
+  fetch('/api/auth/config').then(function (r) { return r.json(); }).then(function (c) {
+    if (c.github || !c.dev) return;
+    document.querySelectorAll('.js-signin').forEach(function (a) {
+      a.href = '/auth/dev';
+      if (/GitHub/.test(a.textContent)) a.textContent = 'Continue in dev mode';
+    });
+  });
+})();
+</script>
+</body>
+</html>

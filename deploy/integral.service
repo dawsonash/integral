@@ -1,0 +1,27 @@
+# systemd unit for the Integral server.
+#   sudo cp deploy/integral.service /etc/systemd/system/
+#   sudo systemctl enable --now integral
+[Unit]
+Description=Integral usability testing
+After=network.target
+
+[Service]
+Type=simple
+User=integral
+WorkingDirectory=/opt/integral
+EnvironmentFile=/opt/integral/.env
+Environment=NODE_ENV=production
+Environment=INTEGRAL_TRUST_PROXY=1
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+
+# Hardening: the process only needs to write its own data dir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/integral/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

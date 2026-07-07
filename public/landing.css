@@ -1,0 +1,131 @@
+/* Marketing landing page only — app pages use style.css alone. */
+
+.lnav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 14px 32px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.lnav .brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--ink); }
+.lnav .brand span { color: var(--accent); }
+.lnav-links { display: flex; gap: 20px; flex: 1; }
+.lnav-links a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; }
+.lnav-links a:hover { color: var(--ink); }
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 72px 24px 56px;
+}
+.hero h1 {
+  font-size: 42px;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+}
+.hero-sub { font-size: 17px; color: var(--muted); margin: 0 0 24px; }
+.hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.hero-ctas .btn { padding: 11px 22px; font-size: 15px; }
+.hero-visual svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 16px 40px rgba(26, 26, 46, 0.14));
+}
+
+.lsection { max-width: 1060px; margin: 0 auto; padding: 56px 24px; }
+.lsection h2 { font-size: 28px; letter-spacing: -0.01em; margin: 0 0 28px; text-align: center; }
+.lsub { text-align: center; margin: -20px 0 28px; font-size: 15px; }
+.lsection-alt {
+  max-width: none;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.lsection-alt > * { max-width: 1060px; margin-left: auto; margin-right: auto; }
+.lsection-alt h2 { margin-bottom: 28px; }
+
+.lgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.lfeature { margin: 0; }
+.lfeature h3 { font-size: 16px; margin: 0 0 8px; }
+.lfeature .muted { font-size: 14px; }
+.licon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  margin: 0;
+  padding: 0 24px;
+}
+.steps h3 { font-size: 16px; margin: 0 0 6px; }
+.steps .muted { font-size: 14px; }
+.stepnum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.lgrid.pricing { grid-template-columns: repeat(2, minmax(0, 320px)); justify-content: center; }
+.price-card { margin: 0; padding: 26px; display: flex; flex-direction: column; }
+.price-card h3 { font-size: 17px; margin: 0 0 4px; }
+.price-card .badge { align-self: flex-start; background: var(--accent); color: var(--accent-ink); margin-bottom: 10px; }
+.price-card.featured { border-color: var(--accent); box-shadow: 0 8px 28px rgba(79, 70, 229, 0.12); }
+.price { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+.price .muted { font-size: 14px; font-weight: 500; }
+.price-card ul { list-style: none; margin: 0 0 20px; padding: 0; flex: 1; }
+.price-card li { padding: 5px 0 5px 24px; font-size: 14px; position: relative; }
+.price-card li::before { content: '✓'; position: absolute; left: 2px; color: var(--ok); font-weight: 700; }
+.price-card .btn { text-align: center; }
+
+.lfooter {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 28px 24px 40px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.lfooter .brand { font-weight: 700; text-decoration: none; color: var(--ink); }
+.lfooter .brand span { color: var(--accent); }
+.lfooter a { color: var(--muted); }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; padding-top: 48px; gap: 32px; }
+  .hero h1 { font-size: 32px; }
+  .lgrid, .steps, .lgrid.pricing { grid-template-columns: 1fr; }
+  .lnav-links { display: none; }
+}

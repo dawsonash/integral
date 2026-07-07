@@ -1,0 +1,24 @@
+# Caddy reverse proxy for Integral — automatic TLS on both origins.
+#
+# app.<domain>  → dashboard + dev API (session cookies live here, and only here)
+# run.<domain>  → hosted artifacts + take flow (anonymous; never sees cookies)
+#
+# The origin split is enforced twice: here (cosmetically, both names hit the
+# same app) and in server/app.js via INTEGRAL_RUN_HOST (authoritatively).
+# Replace integral.example.com with your domain.
+
+app.integral.example.com {
+	reverse_proxy 127.0.0.1:4000
+	encode gzip
+}
+
+run.integral.example.com {
+	reverse_proxy 127.0.0.1:4000
+	encode gzip
+	header {
+		# Hosted artifacts are untrusted uploads: keep them out of search
+		# results and strip referrer leakage back to testers' pages.
+		X-Robots-Tag "noindex"
+		Referrer-Policy "no-referrer"
+	}
+}

@@ -1,0 +1,133 @@
+# Integral
+
+Low-ceremony usability testing for developers: **test the slice you just built in
+~2 minutes, from a link, without a research team.** This is the v1 implementation
+of [docs/design-spec.md](docs/design-spec.md) plus the launch layer from
+[docs/go-to-market.md](docs/go-to-market.md): accounts, plans + billing, abuse
+hardening, legal, and a single-box deploy recipe.
+
+## Run it
+
+```bash
+npm install
+npm start            # http://localhost:4000 — "Continue in dev mode" to sign in
+npm run seed         # optional: seed a demo test with real recorded sessions
+npm test             # API suite + real-browser E2E (needs Google Chrome installed)
+```
+
+With nothing configured you get dev login, console email, and no billing — the
+full product loop works locally. `.env.example` documents every production knob
+(GitHub OAuth, Stripe, Resend, data dir, origin split); `deploy/` has the VPS
+recipe (Caddy, systemd, Litestream backups).
+
+## The core loop
+
+1. **Ingest** — pull a GitHub repo branch (with a live entry-page preview),
+   paste raw HTML, upload a zip, or upload a folder of static files (dashboard
+   at `/`), or one-click the bundled sample test. Unbuilt React projects work:
+   conventional entry modules (`src/main.jsx` and friends) are offered as start
+   pages and mounted via a synthesized wrapper page.
+2. **Host** — the artifact is served **same-origin** under `/t/:id/app/*` with an
+   rrweb recorder injected into every HTML screen. Same-origin hosting is the
+   keystone: it's what makes recording work at all (spec §2). JSX/TS modules are
+   transpiled at serve time (esbuild transform — no repo builds run) with bare
+   imports rewritten to esm.sh, pinned to the artifact's `package.json` versions.
+3. **Set up** (`/tests/:id/setup`) — record success **by demonstration**: drive
+   the artifact for real in the live preview and every click / field change
+   becomes a step chip (a stable selector is inferred — id → data-testid, on the
+   element or a near ancestor → structural path). Prune the incidental steps;
+   what's left is the success chain. Then the task prompt, optional SEQ and
+   one-question screener, response cap.
+4. **Share** — launching produces an open link `/t/:id`. Bring your own testers.
+   Free-tier links auto-expire after 14 days.
+5. **Test** — anonymous testee (never needs an account): one-tap consent gate →
+   task → **auto-detected success** — the chain's final step firing while every
+   earlier step is satisfied (value steps re-checked against the live DOM) →
+   optional SEQ + comment.
+6. **Report** (`/tests/:id/results`) — success rate, per-step chain progress,
+   time-on-task distribution, SEQ distribution + comments, drop-off,
+   click/move/scroll **attention heatmap** overlaid on the artifact, full
+   **session replays**, and CSV/JSON export.
+
+## What's captured (spec §4)
+
+- Mouse / touch / click / scroll — full rrweb session replay.
+- Keyboard **content masked by default** (`maskAllInputs`); devs can un-mask
+  known-safe fields via selector list. Keyboard **behavior** (timing, corrections)
+  survives masking because masked values keep their length.
+- Task success + time-on-task, auto-derived.
+- Zero browser permission prompts, ever.
+
+## Data quality (spec §5)
+
+- Anonymous, no login; one-line consent gate (linking `/privacy`).
+- Response cap auto-closes the test — and emails the owner that results are ready.
+- Junk filter: sessions under 3s (`INTEGRAL_MIN_DURATION_MS`) or with zero
+  interactions are auto-discarded.
+- Fingerprint dedupe (IP+UA hash): one completed response per device per test.
+- Results are permanently labeled **"unscreened sample."**
+
+## The launch layer (go-to-market Tier 1)
+
+- **Auth** — GitHub OAuth (dev-mode login locally); signed session cookie, no
+  external session store. Only the dev-facing surface is gated; the testee flow
+  stays anonymous.
+- **Plans + billing** — free vs Pro ($29/mo) via Stripe Checkout + Customer
+  Portal; one webhook flips `users.plan`. Gates: concurrent live tests,
+  responses/month, retention window, artifact size, link TTL
+  (`server/lib/plans.js`).
+- **Origin split** — set `INTEGRAL_RUN_HOST` and hosted artifacts + the take
+  flow live on a separate domain that never sees dashboard cookies, so uploaded
+  scripts can't touch the dev surface (artifact and recorder still share an
+  origin with each other, which is all recording needs).
+- **Abuse hardening** — rate limits on upload / session-create / ingest /
+  report, per-plan artifact size caps, free-link expiry, and a testee-facing
+  report/takedown channel that emails `INTEGRAL_ABUSE_EMAIL`.
+- **Retention sweep** — daily in-process sweep (or `node scripts/sweep.js` from
+  cron): enforces plan retention on sessions + event files, expires free links,
+  removes orphaned files.
+- **Legal** — `/privacy` and `/terms` (served on both origins); account
+  deletion wipes the user and everything they own.
+
+## Architecture
+
+```
+server/
+  app.js            express app (exported for tests), origin split, index.js boots it
+  db.js             better-sqlite3 schema (users, tests, sessions, interactions, reports)
+  lib/artifacts.js  zip/html/folder ingestion + same-origin serving w/ script injection
+  lib/transpile.js  serve-time esbuild transform + import rewriting (no-build React hosting)
+  lib/auth.js       GitHub OAuth + sealed session cookie + dev login
+  lib/plans.js      plan limits (free / pro / unlimited)
+  lib/signals.js    success-signal chains (+ legacy single-target synthesis)
+  lib/retention.js  daily sweep: retention windows, link expiry, orphan cleanup
+  lib/purge.js      test/session/account deletion
+  lib/ratelimit.js  express-rate-limit instances for the abuse surfaces
+  lib/email.js      Resend transactional email (console fallback)
+  routes/api.js     dev-facing API (tests CRUD, results, export, replay events, heatmap)
+  routes/take.js    testee-facing flow (config, sessions, ingest, abuse reports)
+  routes/auth.js    login/logout/OAuth callback, account deletion
+  routes/billing.js Stripe Checkout, Portal, webhook
+public/
+  inject/recorder.js  injected into artifact screens (taker mode): rrweb record,
+                      interaction stream, chain detection — talks to shell via postMessage
+  inject/picker.js    injected in preview mode: record-by-demonstration + selector inference
+  take.html/js        testee shell (consent → screener → task → SEQ → thanks; report link)
+  setup.html/js       demonstration-based test setup with live preview
+  results.html/js     dashboard + heatmap + thin replay UI over rrweb.Replayer
+  privacy.html, terms.html
+deploy/               Caddyfile, systemd unit, Litestream config, backup script
+scripts/              seed-demo.js, seed-deskdrop.js, sweep.js
+data/                 sqlite db, extracted artifacts, rrweb event logs (gitignored)
+fixtures/             demo-shop/ (multi-screen) + desk-booking.html (chained signals)
+```
+
+Implementation notes on the spec's open questions (§10): recorder is **rrweb 2.x**
+(the `rrweb-player` package's dist is broken in 2.1.0 — the replay UI is a thin
+custom wrapper over `rrweb.Replayer` from the same bundle we record with, which
+also guarantees event-schema match). Screens in a bundle are identified by
+artifact-relative path; multi-page navigation produces one full rrweb snapshot per
+screen in a single stream.
+
+Still out of scope, per spec §7 and the go-to-market Tier 3 list: GitHub/Figma
+ingestion, paid panel, AI synthesis, team seats, eye-tracking, think-aloud audio.

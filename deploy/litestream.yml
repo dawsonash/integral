@@ -1,0 +1,18 @@
+# Litestream config: continuous replication of the SQLite WAL to any
+# S3-compatible bucket (~$1/mo). Install litestream, then:
+#   sudo cp deploy/litestream.yml /etc/litestream.yml
+#   sudo systemctl enable --now litestream
+#
+# Restore drill (run it once so you trust it):
+#   litestream restore -o /tmp/restored.db s3://YOUR_BUCKET/integral.db
+access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+dbs:
+  - path: /opt/integral/data/integral.db
+    replicas:
+      - type: s3
+        bucket: YOUR_BUCKET
+        path: integral.db
+        endpoint: https://YOUR_S3_ENDPOINT   # e.g. https://s3.eu-central-1.wasabisys.com
+        retention: 720h                       # 30 days of point-in-time restore

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up test — Integral</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .layout { display: flex; gap: 20px; align-items: flex-start; }
+  .config { width: 380px; flex-shrink: 0; }
+  .preview { flex: 1; min-width: 0; }
+  #frame { width: 100%; height: 620px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .modebar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .modebar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #chips { list-style: none; margin: 8px 0 0; padding: 0; counter-reset: chip; }
+  #chips li { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 7px; padding: 7px 10px; font-size: 13px; margin-top: 6px; display: flex; gap: 8px; align-items: baseline; counter-increment: chip; }
+  #chips li::before { content: counter(chip); font-weight: 700; color: #6366f1; }
+  #chips li .body { flex: 1; min-width: 0; }
+  #chips li code { font-size: 11px; word-break: break-all; display: block; }
+  #chips li .del { background: none; border: 0; cursor: pointer; color: #6366f1; font-size: 14px; padding: 0 2px; }
+  #chips li.finish { background: #ecfdf5; border-color: #a7f3d0; }
+  #chips li.finish::after { content: "finish line"; font-size: 11px; font-weight: 700; color: #059669; white-space: nowrap; }
+  #chiphint { font-size: 13px; }
+  .chiprow { display: flex; gap: 8px; margin-top: 10px; }
+  .chiprow select { flex: 1; }
+  #sharebox { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 7px; padding: 10px 12px; margin-top: 10px; }
+  #sharebox input { font-family: ui-monospace, monospace; font-size: 13px; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-weight: 600; font-size: 13px; }
+  .check input { width: auto; }
+  .mockrow { border: 1px solid var(--line); border-radius: 7px; padding: 10px; margin-top: 10px; }
+  .mockrow .rowline { display: flex; gap: 6px; }
+  .mockrow select { width: 90px; flex-shrink: 0; }
+  .mockrow .m-status { width: 70px; flex-shrink: 0; }
+  .mockrow .m-del { background: none; border: 0; cursor: pointer; color: var(--muted); font-size: 14px; padding: 0 4px; flex-shrink: 0; }
+  .mockrow textarea { min-height: 48px; margin-top: 6px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .sugchip { display: inline-block; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 99px; padding: 3px 10px; font-size: 12px; font-family: ui-monospace, monospace; margin: 4px 4px 0 0; cursor: pointer; }
+  .sugchip:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="topbar"><a class="brand" href="/">◱ Integral<span>.</span></a><span class="muted" id="crumb"></span></div>
+<div class="container">
+  <div class="layout">
+    <div class="config">
+      <div class="card">
+        <h2>1 · Task</h2>
+        <label>Test name</label>
+        <input type="text" id="name">
+        <label>Task prompt <span class="muted">(what you ask the testee to do)</span></label>
+        <textarea id="task_prompt" placeholder="e.g. Add the blue hoodie to your cart and check out."></textarea>
+        <label>Start screen</label>
+        <select id="entry_path"></select>
+        <div id="repobar" style="display:none;margin-top:12px">
+          <span class="muted" id="repoinfo"></span>
+          <div class="chiprow">
+            <button class="btn-sm" id="repopull">Pull latest from repo</button>
+            <span class="muted" id="repopullmsg"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>2 · Success steps</h2>
+        <p class="muted">Switch the preview to <b>Record steps</b> and just do the task — every click and field change becomes a step. The <b>last step is the finish line</b>; success means it happens with every other step satisfied. Delete steps you don't need. We infer stable selectors — no config files.</p>
+        <ol id="chips"></ol>
+        <p class="muted" id="chiphint">No steps recorded yet.</p>
+        <div class="chiprow">
+          <button class="btn-sm" id="clearchips">Clear steps</button>
+        </div>
+        <div class="chiprow" id="screenaddrow" style="display:none">
+          <select id="screen_add"></select>
+          <button class="btn-sm" id="addscreen">Add “screen reached” step</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>3 · Options</h2>
+        <label class="check"><input type="checkbox" id="seq_enabled" checked> Post-task SEQ (1–7 ease question)</label>
+        <label class="check"><input type="checkbox" id="screener_enabled"> One-question screener</label>
+        <div id="screenerrow" style="display:none">
+          <label>Screener question</label>
+          <input type="text" id="screener_question" placeholder="e.g. How often do you shop online?">
+        </div>
+        <label>Response cap <span class="muted">(auto-closes after N completes)</span></label>
+        <input type="number" id="response_cap" min="1" value="25">
+        <label>Un-mask input selectors <span class="muted">(optional, comma-separated — only for known-safe fields)</span></label>
+        <input type="text" id="unmask_selectors" placeholder="#search, .filter-input">
+      </div>
+      <div class="card">
+        <h2>4 · Sandbox APIs</h2>
+        <p class="muted">The hosted page has no backend. If it calls APIs, hardcode responses
+        here — the sandbox answers matching <code>fetch</code>/XHR requests with them. A URL
+        matches the request path exactly; end it with <code>*</code> to match a prefix.</p>
+        <div id="mocksuggest" style="display:none">
+          <label>Calls found in your code — click to mock</label>
+          <div id="suggestchips"></div>
+        </div>
+        <div id="mockrows"></div>
+        <button class="btn-sm" id="addmock" style="margin-top:10px">+ Add API mock</button>
+      </div>
+      <div class="card">
+        <button class="btn-primary" id="save">Save</button>
+        <button id="launch">Save &amp; launch</button>
+        <a class="btn" id="resultslink" href="#">Results</a>
+        <div class="muted" id="savemsg" style="margin-top:8px"></div>
+        <div id="sharebox" style="display:none">
+          <b>Share link</b> — send it anywhere. <span class="badge warn">unscreened sample</span>
+          <input type="text" id="sharelink" readonly style="margin-top:6px">
+          <button class="btn-sm" id="copy" style="margin-top:6px">Copy</button>
+          <button class="btn-sm" id="closetest" style="margin-top:6px">Close test</button>
+        </div>
+      </div>
+    </div>
+    <div class="preview">
+      <div class="modebar">
+        <button id="mode-browse">Navigate</button>
+        <button id="mode-pick" class="active">Record steps</button>
+        <span class="muted" id="curpage"></span>
+      </div>
+      <iframe id="frame" title="Artifact preview"></iframe>
+    </div>
+  </div>
+</div>
+<script src="/setup.js"></script>
+</body>
+</html>

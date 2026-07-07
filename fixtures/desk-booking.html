@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeskDrop — Book a desk</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1e26; --line:#2a2f3a; --fg:#e7eaf0; --mut:#98a1b3; --accent:#5b8cff; --ok:#3ecf8e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; align-items:center; gap:10px; padding:16px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
+  header .logo { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--accent),#9b6bff); }
+  header h1 { font-size:17px; margin:0; }
+  main { max-width:720px; margin:0 auto; padding:24px 20px 80px; }
+  h2 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 22px; }
+  .screen { display:none; }
+  .screen.active { display:block; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; cursor:pointer; transition:border-color .15s,transform .05s; }
+  .card:hover { border-color:var(--accent); }
+  .card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .card:active { transform:scale(.99); }
+  .card .name { font-weight:600; }
+  .card .meta { color:var(--mut); font-size:13px; margin-top:2px; }
+  .card.gone { opacity:.4; cursor:not-allowed; }
+  label { display:block; font-size:13px; color:var(--mut); margin:16px 0 6px; }
+  input, select { width:100%; padding:11px 12px; background:var(--card); border:1px solid var(--line); border-radius:9px; color:var(--fg); font-size:15px; }
+  input:focus, select:focus { outline:none; border-color:var(--accent); }
+  button.primary { margin-top:24px; width:100%; padding:13px; background:var(--accent); color:#fff; border:0; border-radius:10px; font-size:16px; font-weight:600; cursor:pointer; }
+  button.primary:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { margin-top:14px; width:100%; padding:11px; background:transparent; color:var(--mut); border:1px solid var(--line); border-radius:10px; cursor:pointer; }
+  .summary { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .summary .row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); }
+  .summary .row:last-child { border-bottom:0; }
+  .summary .row .k { color:var(--mut); }
+  .done { text-align:center; padding:40px 0; }
+  .done .check { font-size:52px; }
+  .steps { display:flex; gap:6px; margin-bottom:24px; }
+  .steps .dot { flex:1; height:4px; border-radius:2px; background:var(--line); }
+  .steps .dot.on { background:var(--accent); }
+  .fine { color:var(--mut); font-size:13px; margin-top:32px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"></div>
+  <h1>DeskDrop</h1>
+</header>
+<main>
+  <div class="steps">
+    <div class="dot on" data-step="1"></div>
+    <div class="dot" data-step="2"></div>
+    <div class="dot" data-step="3"></div>
+  </div>
+
+  <!-- Step 1: pick a desk -->
+  <section class="screen active" id="screen-desk">
+    <h2>Pick a desk</h2>
+    <p class="sub">Choose an open desk for your visit. Grey desks are already taken.</p>
+    <div class="grid" id="desk-grid">
+      <div class="card" data-desk="A1" data-testid="desk-A1"><div class="name">Desk A1</div><div class="meta">Window · Standing</div></div>
+      <div class="card gone" data-desk="A2"><div class="name">Desk A2</div><div class="meta">Taken</div></div>
+      <div class="card" data-desk="B4" data-testid="desk-B4"><div class="name">Desk B4</div><div class="meta">Quiet zone</div></div>
+      <div class="card" data-desk="C2" data-testid="desk-C2"><div class="name">Desk C2</div><div class="meta">Dual monitor</div></div>
+      <div class="card gone" data-desk="C3"><div class="name">Desk C3</div><div class="meta">Taken</div></div>
+      <div class="card" data-desk="D1" data-testid="desk-D1"><div class="name">Desk D1</div><div class="meta">Near kitchen</div></div>
+    </div>
+    <button class="primary" id="to-details" disabled>Continue</button>
+  </section>
+
+  <!-- Step 2: details -->
+  <section class="screen" id="screen-details">
+    <h2>Your details</h2>
+    <p class="sub">We'll email your desk pass here.</p>
+    <label for="name">Full name</label>
+    <input type="text" id="name" placeholder="Ada Lovelace" autocomplete="off">
+    <label for="email">Work email</label>
+    <input type="email" id="email" placeholder="you@company.com" autocomplete="off">
+    <label for="date">Date</label>
+    <select id="date">
+      <option value="Mon Jul 6">Monday, Jul 6</option>
+      <option value="Tue Jul 7">Tuesday, Jul 7</option>
+      <option value="Wed Jul 8">Wednesday, Jul 8</option>
+    </select>
+    <button class="primary" id="to-review">Review booking</button>
+    <button class="ghost" id="back-desk">Back</button>
+  </section>
+
+  <!-- Step 3: review + confirm -->
+  <section class="screen" id="screen-review">
+    <h2>Review &amp; confirm</h2>
+    <p class="sub">One tap to lock it in.</p>
+    <div class="summary">
+      <div class="row"><span class="k">Desk</span><span id="r-desk">—</span></div>
+      <div class="row"><span class="k">Name</span><span id="r-name">—</span></div>
+      <div class="row"><span class="k">Email</span><span id="r-email">—</span></div>
+      <div class="row"><span class="k">Date</span><span id="r-date">—</span></div>
+    </div>
+    <button class="primary" id="confirm" data-testid="confirm-booking">Confirm booking</button>
+    <button class="ghost" id="back-details">Back</button>
+    <p class="fine">By confirming you agree to the office desk policy. Cancellations are free up to 24 hours before your visit. Desks are held for 15 minutes past your booked start time before being released to the pool.</p>
+  </section>
+
+  <!-- Done -->
+  <section class="screen" id="screen-done">
+    <div class="done">
+      <div class="check">✅</div>
+      <h2 id="booking-confirmed">Desk booked!</h2>
+      <p class="sub" id="done-line">You're all set.</p>
+      <button class="ghost" id="restart">Book another desk</button>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var state = { desk: null };
+  var $ = function (s) { return document.querySelector(s); };
+  var steps = document.querySelectorAll('.steps .dot');
+
+  function show(id, step) {
+    document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
+    $('#' + id).classList.add('active');
+    steps.forEach(function (d) {
+      d.classList.toggle('on', parseInt(d.dataset.step, 10) <= step);
+    });
+    window.scrollTo(0, 0);
+  }
+
+  // Step 1: desk selection
+  document.querySelectorAll('#desk-grid .card').forEach(function (card) {
+    card.addEventListener('click', function () {
+      if (card.classList.contains('gone')) return;
+      document.querySelectorAll('#desk-grid .card').forEach(function (c) { c.classList.remove('sel'); });
+      card.classList.add('sel');
+      state.desk = card.dataset.desk;
+      $('#to-details').disabled = false;
+    });
+  });
+  $('#to-details').addEventListener('click', function () { show('screen-details', 2); });
+
+  // Step 2: details
+  $('#back-desk').addEventListener('click', function () { show('screen-desk', 1); });
+  $('#to-review').addEventListener('click', function () {
+    state.name = $('#name').value || 'Guest';
+    state.email = $('#email').value || 'no-email@company.com';
+    state.date = $('#date').value;
+    $('#r-desk').textContent = state.desk;
+    $('#r-name').textContent = state.name;
+    $('#r-email').textContent = state.email;
+    $('#r-date').textContent = state.date;
+    show('screen-review', 3);
+  });
+
+  // Step 3: review
+  $('#back-details').addEventListener('click', function () { show('screen-details', 2); });
+  $('#confirm').addEventListener('click', function () {
+    $('#done-line').textContent = 'Desk ' + state.desk + ' is yours on ' + state.date + '.';
+    show('screen-done', 3);
+  });
+
+  // Done
+  $('#restart').addEventListener('click', function () {
+    state = { desk: null };
+    $('#to-details').disabled = true;
+    document.querySelectorAll('#desk-grid .card').forEach(function (c) { c.classList.remove('sel'); });
+    $('#name').value = ''; $('#email').value = '';
+    show('screen-desk', 1);
+  });
+})();
+</script>
+</body>
+</html>

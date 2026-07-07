@@ -1,0 +1,55 @@
+// The origin split reads INTEGRAL_RUN_HOST when the app module loads, so these
+// tests live in their own file (node:test runs each file in a fresh process)
+// rather than in api.test.js, where the env var would break the /t/ tests.
+const { test, before, after } = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const http = require('http');
+
+process.env.INTEGRAL_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'integral-test-'));
+process.env.INTEGRAL_RUN_HOST = 'run.test';
+
+const app = require('../server/app');
+
+let server;
+let port;
+
+before(async () => {
+  await new Promise((resolve) => {
+    server = app.listen(0, () => {
+      port = server.address().port;
+      resolve();
+    });
+  });
+});
+
+after(() => {
+  server.close();
+  fs.rmSync(process.env.INTEGRAL_DATA_DIR, { recursive: true, force: true });
+});
+
+// fetch silently drops the forbidden Host header, so drive node:http directly.
+function get(p, host) {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host: 'localhost', port, path: p, headers: host ? { Host: host } : {} }, (res) => {
+        let body = '';
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      })
+      .on('error', reject);
+  });
+}
+
+test('run host never serves the landing page', async () => {
+  const res = await get('/', 'run.test');
+  assert.equal(res.status, 404);
+});
+
+test('dashboard host still serves the landing page', async () => {
+  const res = await get('/');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /Usability tests for the slice you just built/);
+});

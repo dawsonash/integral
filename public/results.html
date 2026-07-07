@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results — Integral</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/vendor/rrweb.css">
+<style>
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .stat .v { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .barchart { display: flex; align-items: flex-end; gap: 2px; height: 120px; margin-top: 10px; }
+  .barchart .bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+  .barchart .fill { width: 100%; max-width: 44px; background: #5a5bd6; border-radius: 4px 4px 0 0; min-height: 2px; }
+  .barchart .num { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .barchart .lbl { font-size: 11px; color: var(--muted); margin-top: 5px; }
+  .funnel .frow { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .funnel .fname { width: 110px; font-size: 13px; color: var(--muted); text-align: right; }
+  .funnel .ftrack { flex: 1; }
+  .funnel .fbar { height: 22px; background: #5a5bd6; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .funnel .fval { font-size: 13px; font-weight: 600; width: 90px; }
+  #heatwrap { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  #heatframe { width: 100%; height: 560px; border: 0; display: block; }
+  #heatcanvas { position: absolute; inset: 0; pointer-events: none; }
+  #replaymodal { display: none; position: fixed; inset: 0; background: rgba(20,20,40,.6); z-index: 60; align-items: center; justify-content: center; padding: 24px; }
+  #replaybox { background: var(--card); border-radius: 12px; padding: 16px; max-width: 95vw; max-height: 92vh; overflow: auto; }
+  #playerview { position: relative; overflow: hidden; background: #f0f0f3; border-radius: 8px; }
+  #playerview iframe { border: 0; background: #fff; pointer-events: none; }
+  #playerview .replayer-wrapper { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+  #playerbar { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  #progresstrack { flex: 1; height: 6px; background: var(--line); border-radius: 3px; cursor: pointer; }
+  #progressfill { height: 100%; width: 0; background: #5a5bd6; border-radius: 3px; }
+  .speed.sel { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .comment { border-left: 3px solid var(--line); padding: 4px 12px; margin: 10px 0; }
+  .comment .who { font-size: 12px; color: var(--muted); }
+  .ok { color: var(--ok); font-weight: 700; }
+  .bad { color: var(--bad); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span id="crumb" class="muted"></span>
+  <span class="badge warn" title="Bring-your-own-testers link: respondents are whoever you shared the link with, not a screened panel. Treat findings as directional.">unscreened sample</span>
+  <span style="flex:1"></span>
+  <a class="btn btn-sm" id="exportcsv" href="#" title="All sessions as CSV">CSV</a>
+  <a class="btn btn-sm" id="exportjson" href="#" title="Full results payload as JSON">JSON</a>
+  <a class="btn btn-sm" id="setuplink" href="#">Setup</a>
+</div>
+<div class="container">
+  <div class="metrics" id="metrics"></div>
+
+  <div class="row">
+    <div class="card funnel">
+      <h2>Drop-off</h2>
+      <div id="funnel"></div>
+      <div id="chainfunnel" style="display:none">
+        <h3 style="font-size:13px;margin:14px 0 4px">Success steps reached</h3>
+        <div id="chainrows"></div>
+      </div>
+      <p class="muted" id="discardnote"></p>
+    </div>
+    <div class="card">
+      <h2>Time on task <span class="muted">(successful sessions)</span></h2>
+      <div class="barchart" id="timechart"></div>
+    </div>
+    <div class="card">
+      <h2>Ease (SEQ, 1 = very difficult · 7 = very easy)</h2>
+      <div class="barchart" id="seqchart"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Attention heatmap <span class="muted">(mouse &amp; scroll proxy for gaze — no camera)</span></h2>
+    <div class="row" style="margin-bottom:10px">
+      <div><label>Screen</label><select id="heatpage"></select></div>
+      <div><label>Signal</label><select id="heatkind">
+        <option value="click">Clicks</option>
+        <option value="move">Mouse movement</option>
+        <option value="scroll">Scroll depth</option>
+      </select></div>
+    </div>
+    <div id="heatwrap"><iframe id="heatframe" title="Heatmap page"></iframe><canvas id="heatcanvas"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Comments</h2>
+    <div id="comments"><p class="muted">No comments yet.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Sessions</h2>
+    <table id="sessions"><thead><tr>
+      <th>When</th><th>Outcome</th><th>Duration</th><th>SEQ</th><th>Screener</th><th>Interactions</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+</div>
+
+<div id="replaymodal"><div id="replaybox">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <h2 style="margin:0">Session replay</h2>
+    <button class="btn-sm" id="closereplay">Close</button>
+  </div>
+  <div id="playerview"></div>
+  <div id="playerbar">
+    <button class="btn-sm" id="playpause">Pause</button>
+    <div id="progresstrack"><div id="progressfill"></div></div>
+    <span id="playertime" class="muted"></span>
+    <span class="muted" style="margin-left:8px">Speed</span>
+    <button class="btn-sm speed sel" data-speed="1">1×</button>
+    <button class="btn-sm speed" data-speed="2">2×</button>
+    <button class="btn-sm speed" data-speed="4">4×</button>
+  </div>
+</div></div>
+
+<script src="/vendor/rrweb.js"></script>
+<script src="/results.js"></script>
+</body>
+</html>

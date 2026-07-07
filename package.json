@@ -1,0 +1,32 @@
+{
+  "name": "integral",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "start": "node server/index.js",
+    "dev": "node --env-file=.env server/index.js",
+    "seed": "node scripts/seed-demo.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "adm-zip": "^0.5.18",
+    "better-sqlite3": "^12.11.1",
+    "esbuild": "^0.28.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "multer": "^2.2.0",
+    "rrweb": "^2.1.0",
+    "stripe": "^22.3.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.43.1"
+  }
+}

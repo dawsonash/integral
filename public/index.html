@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integral — usability tests</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
+  <span style="flex:1"></span>
+  <span id="account" style="display:none;align-items:center;gap:10px">
+    <span class="badge" id="planbadge"></span>
+    <span class="muted" id="usage"></span>
+    <button class="btn-sm" id="upgrade" style="display:none">Upgrade</button>
+    <button class="btn-sm" id="managebilling" style="display:none">Billing</button>
+    <span class="muted" id="whoami"></span>
+    <button class="btn-sm" id="logout">Log out</button>
+  </span>
+</div>
+
+<div class="container" id="main" style="display:none">
+  <div class="card">
+    <h1>New test</h1>
+    <label>Test name</label>
+    <input type="text" id="name" placeholder="e.g. Checkout flow v2">
+    <div class="tabs" style="margin-top:14px">
+      <button data-tab="repo" class="active">From repository</button>
+      <button data-tab="html">Paste HTML</button>
+      <button data-tab="zip">Upload zip</button>
+      <button data-tab="folder">Upload folder</button>
+    </div>
+    <div data-pane="repo">
+      <div id="repo-disconnected" style="display:none">
+        <p class="muted">Wire this test to a GitHub repository — pick a repo, branch, and start
+        page, and Integral pulls the files straight from it. Static builds and unbuilt React
+        projects both work. Re-pull anytime to test the latest.</p>
+        <a class="btn" id="repoconnect" href="/auth/github/connect">Connect GitHub repositories →</a>
+        <p class="muted" id="repo-unavailable" style="display:none">GitHub OAuth isn't configured
+        on this server, so repositories can't be connected. Use one of the other tabs.</p>
+      </div>
+      <div id="repo-picker" style="display:none">
+        <label>Repository</label>
+        <select id="repo"></select>
+        <label>Branch</label>
+        <input type="text" id="repo_branch">
+        <label>Start page <span class="muted">(the screen testers land on — everything in its folder is hosted with it; React entries like src/main.jsx and Ink terminal apps like source/cli.tsx work unbuilt)</span></label>
+        <select id="repo_entry"></select>
+        <p class="muted" id="repo_entry_msg" style="display:none"></p>
+        <iframe id="repo_preview" title="Page preview"
+          style="display:none;width:100%;height:240px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px"></iframe>
+      </div>
+    </div>
+    <div data-pane="html" style="display:none">
+      <label>Self-contained HTML</label>
+      <textarea id="html" style="min-height:140px;font-family:ui-monospace,monospace" placeholder="&lt;!DOCTYPE html&gt;…"></textarea>
+    </div>
+    <div data-pane="zip" style="display:none">
+      <label>Zip of your front-end build (static files)</label>
+      <input type="file" id="zip" accept=".zip">
+    </div>
+    <div data-pane="folder" style="display:none">
+      <label>Folder of static files</label>
+      <input type="file" id="folder" webkitdirectory multiple>
+    </div>
+    <div style="margin-top:14px">
+      <button class="btn-primary" id="create">Create test →</button>
+      <span class="muted" id="createmsg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Your tests</h2>
+    <table id="tests"><thead><tr>
+      <th>Name</th><th>Status</th><th>Responses</th><th>Created</th><th></th>
+    </tr></thead><tbody></tbody></table>
+    <div id="empty" style="display:none">
+      <p class="muted">No tests yet. Fastest first run: try the bundled sample — a small
+      multi-screen shop, pre-configured with a task and success target.</p>
+      <button class="btn-primary" id="sample">Use the sample artifact →</button>
+    </div>
+  </div>
+
+  <p class="muted" style="text-align:center">
+    <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> ·
+    <a href="#" id="deleteaccount">Delete account</a>
+  </p>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

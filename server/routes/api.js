@@ -15,6 +15,8 @@ const {
 } = require('../lib/artifacts');
 const { pullRepo } = require('../lib/github');
 const { validateMocks, cleanMocks, mocksFor, suggestApiCalls } = require('../lib/mocks');
+const { classify, backendConfigFor, validateBackendConfig } = require('../lib/sandbox/classify');
+const sandboxes = require('../lib/sandbox/registry');
 
 const router = express.Router();
 // fieldSize covers the pasted-HTML path; the per-plan artifact cap is enforced
@@ -27,7 +29,7 @@ const upload = multer({
 const getTest = db.prepare('SELECT * FROM tests WHERE id = ?');
 
 function testJson(t) {
-  return { ...t, signals: signalsFor(t), html_files: listHtmlFiles(t.id), apiMocks: mocksFor(t) };
+  return { ...t, signals: signalsFor(t), html_files: listHtmlFiles(t.id), apiMocks: mocksFor(t), backendConfig: backendConfigFor(t) };
 }
 
 // Everything under /api/tests is the dev-facing surface: authenticated and
@@ -129,15 +131,28 @@ router.post('/api/tests', uploadLimiter, upload.any(), async (req, res) => {
       if (listHtmlFiles(id).includes(want)) entry = want;
     }
   }
+  // No static start page — this may be a server-rendered app (Express/
+  // Handlebars & co., spec docs/fake-backend-spec.md): the UI only exists
+  // once its server runs. Classify the repo; when it looks like a server
+  // app, create a server-type test whose pages come from the sandbox proxy
+  // instead of disk. The detected config is a draft the dev confirms in setup.
+  let backendConfig = null;
   if (!entry) {
-    return res.status(400).json({ error: 'no_html', message: 'Artifact contains no HTML page or React entry module.' });
+    const detected = classify(artifactRoot(id));
+    if (detected.kind === 'server') {
+      backendConfig = detected;
+      entry = ''; // the app's own routes decide pages; iframe starts at /t/:id/app/
+    } else {
+      return res.status(400).json({ error: 'no_html', message: 'Artifact contains no HTML page or React entry module.' });
+    }
   }
   db.prepare(
     `INSERT INTO tests (id, name, source_type, entry_path, user_id, created_at,
-       repo_full_name, repo_branch, repo_path, repo_synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       repo_full_name, repo_branch, repo_path, repo_synced_at, backend_config)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(id, name, sourceType, entry, req.user.id, Date.now(),
-    repoCols.full_name, repoCols.branch, repoCols.path, repoCols.synced_at);
+    repoCols.full_name, repoCols.branch, repoCols.path, repoCols.synced_at,
+    backendConfig ? JSON.stringify(backendConfig) : null);
   res.json(testJson(getTest.get(id)));
 });
 
@@ -162,6 +177,13 @@ router.post('/api/tests/:id/pull', ownedTest, async (req, res) => {
     }
     return res.status(400).json({ error: 'pull_failed', message: e.message });
   }
+  // Server-rendered test: pages come from the app, not disk — no entry to
+  // re-derive. Drop the running sandbox so the next request boots the new code.
+  if (backendConfigFor(t)?.kind === 'server') {
+    sandboxes.teardown(t.id).catch(() => {});
+    db.prepare('UPDATE tests SET repo_synced_at = ? WHERE id = ?').run(Date.now(), t.id);
+    return res.json(testJson(getTest.get(t.id)));
+  }
   // The entry screen may have been renamed or removed by the new snapshot —
   // and a synthesized module wrapper never survives a re-pull, so ensureEntry
   // recreates one when the snapshot is still HTML-less.
@@ -171,6 +193,30 @@ router.post('/api/tests/:id/pull', ownedTest, async (req, res) => {
   }
   db.prepare('UPDATE tests SET entry_path = ?, repo_synced_at = ? WHERE id = ?').run(entry, Date.now(), t.id);
   res.json(testJson(getTest.get(t.id)));
+});
+
+// ---------- server-rendered backend config (docs/fake-backend-spec.md §5) ----------
+// The dev-editable fake-backend surface: seed tables ("the Lorem Ipsum"),
+// start command, auth preset, stubs. v1 edits raw JSON in setup.
+
+router.get('/api/tests/:id/backend-config', ownedTest, (req, res) => {
+  res.json({ backendConfig: backendConfigFor(req.test) });
+});
+
+router.patch('/api/tests/:id/backend-config', express.json(), ownedTest, (req, res) => {
+  const cfg = req.body?.backendConfig;
+  const err = validateBackendConfig(cfg);
+  if (err) return res.status(400).json({ error: 'invalid_backend_config', message: err });
+  db.prepare('UPDATE tests SET backend_config = ? WHERE id = ?').run(JSON.stringify(cfg), req.test.id);
+  // A running sandbox was booted from the old config; retire it so the next
+  // preview/take request boots (and re-seeds) with this one.
+  sandboxes.teardown(req.test.id).catch(() => {});
+  res.json(testJson(getTest.get(req.test.id)));
+});
+
+// Re-run detection (e.g. after editing the config into a corner).
+router.post('/api/tests/:id/backend-config/detect', ownedTest, (req, res) => {
+  res.json({ detected: classify(artifactRoot(req.test.id)) });
 });
 
 // One-click first test: the bundled demo shop, pre-configured so the empty
@@ -213,6 +259,8 @@ const EDITABLE = {
   seq_enabled: (v) => (v ? 1 : 0),
   screener_enabled: (v) => (v ? 1 : 0),
   screener_question: String,
+  roam_enabled: (v) => (v ? 1 : 0),
+  notes_enabled: (v) => (v ? 1 : 0),
   response_cap: (v) => Math.max(1, Number(v) || 25),
   unmask_selectors: String,
   success_signals: (v) => JSON.stringify(v),
@@ -341,6 +389,9 @@ function buildResults(t) {
     comments: completed
       .filter((s) => s.seq_comment)
       .map((s) => ({ sessionId: s.id, score: s.seq_score, comment: s.seq_comment })),
+    notes: completed
+      .filter((s) => s.notes)
+      .map((s) => ({ sessionId: s.id, note: s.notes })),
     sessions: sessions.map((s) => ({
       id: s.id,
       status: s.status,
@@ -350,6 +401,7 @@ function buildResults(t) {
       durationMs: s.duration_ms,
       seqScore: s.seq_score,
       seqComment: s.seq_comment,
+      notes: s.notes,
       screenerAnswer: s.screener_answer,
       interactionCount: s.interaction_count,
       discardReason: s.discard_reason,
@@ -372,7 +424,7 @@ router.get('/api/tests/:id/export.csv', ownedTest, (req, res) => {
   const { sessions } = buildResults(req.test);
   const cols = [
     'id', 'status', 'success', 'gaveUp', 'startedAt', 'durationMs',
-    'seqScore', 'seqComment', 'screenerAnswer', 'interactionCount', 'discardReason',
+    'seqScore', 'seqComment', 'notes', 'screenerAnswer', 'interactionCount', 'discardReason',
   ];
   const cell = (v) => {
     if (v === null || v === undefined) return '';

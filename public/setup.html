@@ -74,6 +74,8 @@
       <div class="card">
         <h2>3 · Options</h2>
         <label class="check"><input type="checkbox" id="seq_enabled" checked> Post-task SEQ (1–7 ease question)</label>
+        <label class="check"><input type="checkbox" id="notes_enabled"> Ask for post-test notes (open-ended)</label>
+        <label class="check"><input type="checkbox" id="roam_enabled"> Let testees roam the app after finishing the task</label>
         <label class="check"><input type="checkbox" id="screener_enabled"> One-question screener</label>
         <div id="screenerrow" style="display:none">
           <label>Screener question</label>
@@ -96,6 +98,19 @@
         <div id="mockrows"></div>
         <button class="btn-sm" id="addmock" style="margin-top:10px">+ Add API mock</button>
       </div>
+      <div class="card" id="backendcard" style="display:none">
+        <h2>Server backend <span class="badge warn">sandbox</span></h2>
+        <p class="muted">This app is server-rendered: Integral boots it against a <b>throwaway
+        database</b> seeded with fake rows and a fake signed-in user — your real database and
+        secrets are never used. The detected config is below; edit the start command, seed
+        tables (the fake data testers see), auth, and third-party stubs, then save to restart
+        the sandboxed app.</p>
+        <textarea id="backendjson" spellcheck="false" style="min-height:240px;font-family:ui-monospace,monospace;font-size:12px"></textarea>
+        <div class="chiprow">
+          <button class="btn-sm" id="backendsave">Save config &amp; restart app</button>
+          <span class="muted" id="backendmsg"></span>
+        </div>
+      </div>
       <div class="card">
         <button class="btn-primary" id="save">Save</button>
         <button id="launch">Save &amp; launch</button>
@@ -105,7 +120,6 @@
           <b>Share link</b> — send it anywhere. <span class="badge warn">unscreened sample</span>
           <input type="text" id="sharelink" readonly style="margin-top:6px">
           <button class="btn-sm" id="copy" style="margin-top:6px">Copy</button>
-          <button class="btn-sm" id="closetest" style="margin-top:6px">Close test</button>
         </div>
       </div>
     </div>
@@ -116,6 +130,7 @@
         <span class="muted" id="curpage"></span>
       </div>
       <iframe id="frame" title="Artifact preview"></iframe>
+      <button id="deletetest" style="margin-top:10px">Delete</button>
     </div>
   </div>
 </div>

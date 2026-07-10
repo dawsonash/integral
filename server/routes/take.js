@@ -5,6 +5,9 @@ const { db, EVENTS_DIR } = require('../db');
 const { newId, fingerprint } = require('../lib/util');
 const { serveArtifactFile } = require('../lib/artifacts');
 const { mockSnippet } = require('../lib/mocks');
+const { isServerTest } = require('../lib/sandbox/classify');
+const sandboxes = require('../lib/sandbox/registry');
+const { proxyRequest, sandboxErrorPage } = require('../lib/sandbox/proxy');
 const { signalsFor } = require('../lib/signals');
 const { planFor, monthStart } = require('../lib/plans');
 const { sendEmail } = require('../lib/email');
@@ -30,24 +33,43 @@ function testOr404(req, res, next) {
 
 // All modes carry the API-mock shim (in <head>, so it patches fetch/XHR
 // before any artifact script fires a request).
+//
+// Two ways bytes get into /t/:id/…: static tests read files from disk
+// (serveArtifactFile); server-rendered tests reverse-proxy a live sandboxed
+// app (lib/sandbox). Both inject the same scripts, so everything downstream
+// of the iframe — recorder, success chain, heatmap, replay — is unchanged.
 
-// Taker mode: recorder injected into every HTML screen.
-router.get('/t/:testId/app/{*path}', testOr404, (req, res) => {
+async function serveTestee(req, res, mode, injectScript) {
   const rel = (req.params.path || []).join('/');
-  serveArtifactFile(res, req.test.id, rel, '<script src="/__integral/recorder.js"></script>', mockSnippet(req.test), `/t/${req.test.id}/app/`);
-});
+  const mountPrefix = `/t/${req.test.id}/${mode}/`;
+  if (isServerTest(req.test)) {
+    try {
+      const handle = await sandboxes.ensure(req.test);
+      await proxyRequest(req, res, { handle, mountPrefix, injectScript, headScript: mockSnippet(req.test) });
+    } catch (e) {
+      if (!res.headersSent) res.status(502).type('html').send(sandboxErrorPage(e));
+    }
+    return;
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).send('Method not allowed');
+  serveArtifactFile(res, req.test.id, rel, injectScript, mockSnippet(req.test), mountPrefix);
+}
+
+// Taker mode: recorder injected into every HTML screen. `.all` because a
+// server-rendered app takes form POSTs, not just GETs.
+router.all('/t/:testId/app/{*path}', testOr404, (req, res) =>
+  serveTestee(req, res, 'app', '<script src="/__integral/recorder.js"></script>')
+);
 
 // Setup preview mode: element picker injected.
-router.get('/t/:testId/preview/{*path}', testOr404, (req, res) => {
-  const rel = (req.params.path || []).join('/');
-  serveArtifactFile(res, req.test.id, rel, '<script src="/__integral/picker.js"></script>', mockSnippet(req.test), `/t/${req.test.id}/preview/`);
-});
+router.all('/t/:testId/preview/{*path}', testOr404, (req, res) =>
+  serveTestee(req, res, 'preview', '<script src="/__integral/picker.js"></script>')
+);
 
 // Plain view (heatmap background): no script injection beyond the mocks.
-router.get('/t/:testId/view/{*path}', testOr404, (req, res) => {
-  const rel = (req.params.path || []).join('/');
-  serveArtifactFile(res, req.test.id, rel, '', mockSnippet(req.test), `/t/${req.test.id}/view/`);
-});
+router.all('/t/:testId/view/{*path}', testOr404, (req, res) =>
+  serveTestee(req, res, 'view', '')
+);
 
 // Create-form entry preview: a branch snapshot with no test row yet, hosted
 // under an unguessable id minted by POST /api/github/preview. Lives on the
@@ -98,6 +120,8 @@ router.get('/api/take/:testId/config', testOr404, (req, res) => {
     successSelector: t.success_selector,
     successScreen: t.success_screen,
     seqEnabled: !!t.seq_enabled,
+    notesEnabled: !!t.notes_enabled,
+    roamEnabled: !!t.roam_enabled,
     screenerEnabled: !!t.screener_enabled,
     screenerQuestion: t.screener_question,
     unmaskSelectors: (t.unmask_selectors || '').split(',').map((s) => s.trim()).filter(Boolean),
@@ -124,9 +148,14 @@ router.post('/api/take/:testId/sessions', sessionLimiter, testOr404, (req, res) 
     return res.status(409).json({ error: 'closed' });
   }
   const fp = fingerprint(req);
+  // A prior completed session only blocks a retake if it happened under the
+  // test's current launch — relaunching (Save & launch) bumps launched_at,
+  // which lets the same device take the edited test again.
   const dup = db
-    .prepare("SELECT 1 FROM sessions WHERE test_id = ? AND fingerprint = ? AND status = 'completed'")
-    .get(t.id, fp);
+    .prepare(
+      "SELECT 1 FROM sessions WHERE test_id = ? AND fingerprint = ? AND status = 'completed' AND started_at >= ?"
+    )
+    .get(t.id, fp, t.launched_at || 0);
   if (dup) return res.status(409).json({ error: 'already_participated' });
   const id = newId(16);
   db.prepare(
@@ -196,7 +225,14 @@ router.post('/api/take/:testId/sessions/:sessionId/finish', getSession, (req, re
   const s = req.session;
   if (s.status !== 'started') return res.json({ ok: true, status: s.status });
   const now = Date.now();
-  const duration = now - s.started_at;
+  // When the test lets testees roam after the task, the client reports the
+  // task's own completion time separately so roaming doesn't inflate the
+  // "time to complete" metric — clamp it to a sane range in case of clock skew.
+  const elapsed = now - s.started_at;
+  const taskDurationMs = Number(req.body?.taskDurationMs);
+  const duration = Number.isFinite(taskDurationMs) && taskDurationMs > 0 && taskDurationMs <= elapsed
+    ? taskDurationMs
+    : elapsed;
   const success = req.body?.success ? 1 : 0;
   const gaveUp = req.body?.gaveUp ? 1 : 0;
   const signalHits = cleanSignalHits(req.body?.signalHits);
@@ -222,6 +258,9 @@ router.post('/api/take/:testId/sessions/:sessionId/finish', getSession, (req, re
   const t = getTest.get(s.test_id);
   if (t.status === 'live' && completedCount.get(t.id).n >= t.response_cap) {
     db.prepare("UPDATE tests SET status = 'closed' WHERE id = ?").run(t.id);
+    // §7 v1 shared-state reset point: drop the sandbox at the cap so a
+    // relaunch boots a freshly seeded database.
+    if (isServerTest(t)) sandboxes.teardown(t.id).catch(() => {});
     const owner = t.user_id ? getOwner.get(t.user_id) : null;
     if (owner && owner.email) {
       const appUrl = process.env.INTEGRAL_APP_URL || `${req.protocol}://${req.get('host')}`;
@@ -266,6 +305,15 @@ router.post('/api/take/:testId/sessions/:sessionId/seq', getSession, (req, res) 
     db.prepare('UPDATE sessions SET seq_score = ?, seq_comment = ? WHERE id = ?').run(
       score, comment, req.session.id
     );
+  }
+  res.json({ ok: true });
+});
+
+// Open-ended post-test note, independent of the SEQ score/comment above.
+router.post('/api/take/:testId/sessions/:sessionId/notes', getSession, (req, res) => {
+  const notes = String(req.body?.notes || '').slice(0, 2000).trim();
+  if (notes) {
+    db.prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(notes, req.session.id);
   }
   res.json({ ok: true });
 });

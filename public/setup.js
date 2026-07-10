@@ -99,6 +99,8 @@
       task_prompt: $('task_prompt').value,
       entry_path: $('entry_path').value,
       seq_enabled: $('seq_enabled').checked,
+      notes_enabled: $('notes_enabled').checked,
+      roam_enabled: $('roam_enabled').checked,
       screener_enabled: $('screener_enabled').checked,
       screener_question: $('screener_question').value,
       response_cap: Number($('response_cap').value) || 25,
@@ -227,14 +229,46 @@
     if (!$('task_prompt').value.trim()) return msg('Write a task prompt first.');
     save({ status: 'live' }).then(function () { msg('Live! Share the link below.'); }).catch(function (e) { msg(e.message); });
   };
-  $('closetest').onclick = function () {
-    save({ status: 'closed' }).then(function () { msg('Test closed.'); });
+  $('deletetest').onclick = function () {
+    if (test.status === 'live') {
+      save({ status: 'closed' }).then(function () { msg('Test closed.'); });
+      return;
+    }
+    if (!confirm('Delete this test and all its sessions?')) return;
+    fetch('/api/tests/' + testId, { method: 'DELETE' }).then(function () { location.href = '/'; });
   };
   $('copy').onclick = function () {
     navigator.clipboard.writeText($('sharelink').value).then(function () { msg('Copied.'); });
   };
 
   function msg(s) { $('savemsg').textContent = s; }
+
+  // ---------- server-rendered backend config (fake-backend sandbox) ----------
+
+  $('backendsave').onclick = function () {
+    var cfg;
+    try {
+      cfg = JSON.parse($('backendjson').value);
+    } catch (e) {
+      return ($('backendmsg').textContent = 'Not valid JSON: ' + e.message);
+    }
+    $('backendmsg').textContent = 'Saving…';
+    fetch('/api/tests/' + testId + '/backend-config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backendConfig: cfg }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) return ($('backendmsg').textContent = res.j.message || 'Save failed');
+        test = res.j;
+        $('backendmsg').textContent = 'Saved — app restarting with new config…';
+        render();
+        // The first request after a config change boots the sandbox; the
+        // preview shows a boot-error page with logs if it fails.
+        loadPreview($('entry_path').value);
+      });
+  };
 
   $('repopull').onclick = function () {
     $('repopullmsg').textContent = 'Pulling…';
@@ -255,11 +289,14 @@
     $('task_prompt').value = test.task_prompt || '';
     $('response_cap').value = test.response_cap;
     $('seq_enabled').checked = !!test.seq_enabled;
+    $('notes_enabled').checked = !!test.notes_enabled;
+    $('roam_enabled').checked = !!test.roam_enabled;
     $('screener_enabled').checked = !!test.screener_enabled;
     $('screenerrow').style.display = test.screener_enabled ? '' : 'none';
     $('screener_question').value = test.screener_question || '';
     $('unmask_selectors').value = test.unmask_selectors || '';
     $('resultslink').href = '/tests/' + testId + '/results';
+    $('deletetest').textContent = test.status === 'live' ? 'Close' : 'Delete';
 
     var entrySel = $('entry_path');
     var screenSel = $('screen_add');
@@ -270,6 +307,11 @@
     });
     // Screen-reached steps only make sense for multi-page artifacts.
     $('screenaddrow').style.display = (test.html_files || []).length > 1 ? '' : 'none';
+
+    $('backendcard').style.display = test.backendConfig ? '' : 'none';
+    if (test.backendConfig && document.activeElement !== $('backendjson')) {
+      $('backendjson').value = JSON.stringify(test.backendConfig, null, 2);
+    }
 
     $('repobar').style.display = test.source_type === 'repo' ? '' : 'none';
     if (test.source_type === 'repo') {

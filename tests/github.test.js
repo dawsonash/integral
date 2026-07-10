@@ -348,11 +348,15 @@ test('a Node backend is never offered or mounted as a React entry', async () => 
   // has no react — no module entries offered.
   const tree = await (await fetch(base + '/api/github/tree?repo=owner/server&ref=main', { headers: { Cookie: cookie } })).json();
   assert.deepEqual(tree.modules, []);
-  // Creation gate: forcing the entry via the API is refused too (no HTML
-  // anywhere in the repo to fall back to).
+  // Creation gate: forcing the entry can't mount it as a React module — the
+  // repo classifies as a server-rendered app instead (fake-backend sandbox),
+  // with no wrapper page synthesized.
   const { status, json } = await createRepoTest({ name: 'Backend', repo: 'owner/server', branch: 'main', entry: 'src/index.js' });
-  assert.equal(status, 400);
-  assert.equal(json.error, 'no_html');
+  assert.equal(status, 200);
+  assert.equal(json.backendConfig.kind, 'server');
+  assert.equal(json.backendConfig.framework, 'express');
+  assert.equal(json.entry_path, '');
+  assert.deepEqual(json.html_files, []);
   // Preview gate: same refusal, with a reason instead of a blank page.
   const prev = await fetch(base + '/api/github/preview', {
     method: 'POST',
@@ -387,8 +391,9 @@ test('an HTML-less React zip still gets a start page', async () => {
   assert.equal(t.entry_path, 'index.html');
   const html = fs.readFileSync(path.join(ARTIFACTS_DIR, t.id, 'index.html'), 'utf8');
   assert.match(html, /<script type="module"[^>]* src="\.\/src\/main\.jsx">/);
-  // A zip that only *looks* like an app (no react dependency) is rejected
-  // with the clear error instead of hosting a blank page.
+  // A zip that only *looks* like a browser app (no react dependency) is
+  // never given a wrapper page — it classifies as a server-rendered test
+  // (fake-backend sandbox) instead of hosting a blank page.
   const zip2 = new AdmZip();
   zip2.addFile('package.json', Buffer.from('{"dependencies":{"express":"^4.18.2"}}'));
   zip2.addFile('src/index.js', Buffer.from('module.exports = 1;\n'));
@@ -396,8 +401,58 @@ test('an HTML-less React zip still gets a start page', async () => {
   fd2.append('name', 'Server zip');
   fd2.append('zip', new Blob([zip2.toBuffer()]), 'server.zip');
   const res2 = await fetch(base + '/api/tests', { method: 'POST', body: fd2, headers: { Cookie: cookie } });
-  assert.equal(res2.status, 400);
-  assert.equal((await res2.json()).error, 'no_html');
+  assert.equal(res2.status, 200);
+  const t2 = await res2.json();
+  assert.equal(t2.backendConfig.kind, 'server');
+  assert.deepEqual(t2.html_files, []);
+  // A zip with neither HTML nor any recognizable app is still refused.
+  const zip3 = new AdmZip();
+  zip3.addFile('notes.txt', Buffer.from('hello'));
+  const fd3 = new FormData();
+  fd3.append('name', 'Nothing zip');
+  fd3.append('zip', new Blob([zip3.toBuffer()]), 'nothing.zip');
+  const res3 = await fetch(base + '/api/tests', { method: 'POST', body: fd3, headers: { Cookie: cookie } });
+  assert.equal(res3.status, 400);
+  assert.equal((await res3.json()).error, 'no_html');
+});
+
+test('boot failures name the cause and give fix steps', async () => {
+  const zip = new AdmZip();
+  zip.addFile('package.json', Buffer.from(SITE_PKG));
+  zip.addFile('src/main.jsx', Buffer.from('import App from "./App";\nexport default 1;\n'));
+  zip.addFile('src/Broken.jsx', Buffer.from('export default function B() { return <h1>; }\n'));
+  const fd = new FormData();
+  fd.append('name', 'Diagnostics');
+  fd.append('zip', new Blob([zip.toBuffer()]), 'diag.zip');
+  const res = await fetch(base + '/api/tests', { method: 'POST', body: fd, headers: { Cookie: cookie } });
+  assert.equal(res.status, 200);
+  const t = await res.json();
+  // The wrapper's last-resort onerror routes through the fallback that
+  // explains where to look; the specific reporter is still defined.
+  const page = await (await fetch(base + `/t/${t.id}/app/index.html`)).text();
+  assert.match(page, /__integralBootFallback\('\.\/src\/main\.jsx'\)/);
+  assert.match(page, /__integralBootError/);
+  // An import of a file that doesn't exist is diagnosed at transpile time:
+  // the statement is replaced with a reporter naming importer and specifier.
+  const mod = await (await fetch(base + `/t/${t.id}/app/src/main.jsx`)).text();
+  assert.match(mod, /Cannot find \\"\.\/App\\" imported by src\/main\.jsx/);
+  assert.match(mod, /How to fix/);
+  assert.ok(!/from\s*"\.\/App"/.test(mod), 'broken import statement must be replaced');
+  // A file esbuild can't compile is served as a diagnosis (file:line and
+  // fix steps), not as raw JSX the browser would reject without detail.
+  const broken = await (await fetch(base + `/t/${t.id}/app/src/Broken.jsx`)).text();
+  assert.match(broken, /src\/Broken\.jsx:\d+:\d+/);
+  assert.match(broken, /How to fix/);
+  assert.ok(!broken.includes('<h1>'), 'raw JSX must not be served');
+  // Requesting a JS-family path that doesn't exist yields a reporting
+  // module (200), not a bare 404 the module loader swallows silently.
+  const missing = await fetch(base + `/t/${t.id}/app/src/Nope.jsx`);
+  assert.equal(missing.status, 200);
+  const body = await missing.text();
+  assert.match(body, /\.\/src\/Nope\.jsx doesn't exist/);
+  assert.match(body, /How to fix/);
+  // Non-module paths still 404 normally.
+  assert.equal((await fetch(base + `/t/${t.id}/app/src/Nope.css`)).status, 404);
 });
 
 test('picking an entry file hosts its folder and starts on that page', async () => {

@@ -12,6 +12,8 @@
     flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px;
   }
   #gate .card { max-width: 440px; width: 100%; }
+  #gate .card.gate-closed { width: auto; max-width: 380px; text-align: center; }
+  #gate .card.gate-closed h2 { margin: 0; }
   #taskbar {
     display: none; background: #1a1a2e; color: #fff; padding: 10px 16px;
     align-items: center; gap: 14px; flex-wrap: wrap;
@@ -35,7 +37,7 @@
 <body>
   <div id="gate"><div class="card" id="gatecard">Loading…</div></div>
   <div id="taskbar">
-    <div class="prompt"><b>Your task</b><span id="taskprompt"></span></div>
+    <div class="prompt"><b id="taskbarlabel">Your task</b><span id="taskprompt"></span></div>
     <button id="giveup">I couldn't do it — give up</button>
   </div>
   <div id="stage"><iframe id="appframe" title="App under test"></iframe></div>

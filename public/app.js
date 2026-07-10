@@ -215,17 +215,10 @@
           '<td><span class="badge ' + t.status + '">' + t.status + '</span></td>' +
           '<td>' + t.completed_count + ' / ' + t.response_cap + '</td>' +
           '<td class="muted">' + fmtDate(t.created_at) + '</td>' +
-          '<td><a class="btn btn-sm" href="/tests/' + t.id + '/results">Results</a> ' +
-          '<button class="btn-sm" data-del="' + t.id + '">Delete</button></td>';
+          '<td><a class="btn btn-sm" href="/tests/' + t.id + '/results">Results</a></td>';
         tr.querySelector('a').textContent = t.name;
         tbody.appendChild(tr);
       });
-      tbody.onclick = function (e) {
-        var id = e.target.dataset && e.target.dataset.del;
-        if (id && confirm('Delete this test and all its sessions?')) {
-          fetch('/api/tests/' + id, { method: 'DELETE' }).then(function () { loadTests(); });
-        }
-      };
     });
   }
 

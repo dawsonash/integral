@@ -28,6 +28,9 @@ function deleteTestData(testId) {
   db.prepare('DELETE FROM reports WHERE test_id = ?').run(testId);
   db.prepare('DELETE FROM tests WHERE id = ?').run(testId);
   fs.rmSync(artifactRoot(testId), { recursive: true, force: true });
+  // Server-rendered tests may have a live sandbox (child process + throwaway
+  // DB); fire-and-forget — the ephemeral DB is force-dropped either way.
+  require('./sandbox/registry').teardown(testId).catch(() => {});
 }
 
 function deleteUserData(userId) {

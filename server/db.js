@@ -102,6 +102,11 @@ ensureColumn('tests', 'success_signals', 'TEXT');
 ensureColumn('sessions', 'signal_hits', 'TEXT');
 ensureColumn('tests', 'user_id', 'INTEGER REFERENCES users(id)');
 ensureColumn('tests', 'launched_at', 'INTEGER');
+// Post-task options: let testees keep exploring after finishing the task,
+// and/or collect an open-ended note distinct from the SEQ comment.
+ensureColumn('tests', 'roam_enabled', 'INTEGER DEFAULT 0');
+ensureColumn('tests', 'notes_enabled', 'INTEGER DEFAULT 0');
+ensureColumn('sessions', 'notes', 'TEXT');
 // Repo-scoped OAuth token, granted separately from sign-in (which is scope-free).
 ensureColumn('users', 'github_token', 'TEXT');
 // Repo-backed tests: where the artifact was pulled from, so it can be re-pulled.
@@ -111,6 +116,9 @@ ensureColumn('tests', 'repo_path', 'TEXT');
 ensureColumn('tests', 'repo_synced_at', 'INTEGER');
 // Hardcoded sandbox responses for the artifact's API calls (JSON array).
 ensureColumn('tests', 'api_mocks', 'TEXT');
+// Server-rendered tests: how to boot the app against a fake backend (JSON,
+// see docs/fake-backend-spec.md §5). NULL for static/SPA tests.
+ensureColumn('tests', 'backend_config', 'TEXT');
 db.exec('CREATE INDEX IF NOT EXISTS idx_tests_user ON tests(user_id)');
 
 module.exports = { db, DATA_DIR, ARTIFACTS_DIR, EVENTS_DIR };

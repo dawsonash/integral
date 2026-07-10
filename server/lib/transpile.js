@@ -61,7 +61,7 @@ const TS_SWAPS = { '.js': ['.ts', '.tsx'], '.mjs': ['.mts'], '.jsx': ['.tsx'] };
 
 // "./App" (as imported from `fromRel`) → "./App.jsx", by looking at what
 // actually exists in the artifact. Returns the specifier unchanged when the
-// file exists as written or nothing matches.
+// file exists as written, and null when nothing matches.
 function resolveRelative(spec, fromRel, rootDir) {
   const fromDir = path.posix.dirname(fromRel);
   const target = path.posix.normalize(path.posix.join(fromDir, spec));
@@ -81,7 +81,30 @@ function resolveRelative(spec, fromRel, rootDir) {
   for (const ext of RESOLVE_EXTS) {
     if (exists(target + '/index' + ext)) return spec.replace(/\/$/, '') + '/index' + ext;
   }
-  return spec;
+  return null;
+}
+
+// Why a relative specifier can't be served (with steps to fix it), or null
+// when it can. Specifiers with query/hash suffixes (Vite's "?raw" etc.) are
+// left alone — their meaning is bundler-specific, not a missing file.
+function unresolvableReason(spec, fromRel, rootDir) {
+  if (!spec.startsWith('.') || /[?#]/.test(spec)) return null;
+  const target = path.posix.normalize(path.posix.join(path.posix.dirname(fromRel), spec));
+  if (target.startsWith('..')) {
+    return (
+      `"${spec}" (imported by ${fromRel}) points outside the hosted folder — ` +
+      "only the start page's folder and everything below it are hosted.\n\n" +
+      'How to fix: move the imported file inside the hosted folder, or pick a start page higher up so the import stays inside it.'
+    );
+  }
+  if (resolveRelative(spec, fromRel, rootDir) != null) return null;
+  return (
+    `Cannot find "${spec}" imported by ${fromRel} — no matching file in this test's files.\n\n` +
+    'How to fix:\n' +
+    '1. Check the import path, spelling, and extension — it must match a file exactly (case-sensitive).\n' +
+    '2. If the file exists in your project, commit and push it to the selected branch, or re-upload it.\n' +
+    '3. Reload this preview.'
+  );
 }
 
 // A bare specifier the artifact carries a browser stand-in for (written to
@@ -107,7 +130,7 @@ function standInFor(spec, fromRel, rootDir) {
 function rewriteSpec(spec, fromRel, rootDir, mountPrefix, deps) {
   if (/^(https?:)?\/\//.test(spec) || spec.startsWith('data:')) return spec;
   if (spec.startsWith('/')) return mountPrefix + spec.slice(1);
-  if (spec.startsWith('.')) return resolveRelative(spec, fromRel, rootDir);
+  if (spec.startsWith('.')) return resolveRelative(spec, fromRel, rootDir) || spec;
   // Node builtins can't come from the registry; esm.sh hosts browser
   // polyfills for them (stubs where no browser equivalent exists).
   if (spec.startsWith('node:')) return `https://esm.sh/node/${spec.slice(5)}.mjs`;
@@ -123,11 +146,33 @@ function cssInject(spec) {
   );
 }
 
+// An import the server already knows is broken becomes code that tells the
+// developer what's wrong (via the wrapper's boot-error overlay) and then
+// throws — instead of letting the browser 404 with a detail-free
+// "Failed to load" event.
+function reportAndThrow(msg) {
+  return (
+    '(function (m) { console.error(m); ' +
+    'if (typeof window !== "undefined" && window.__integralBootError) window.__integralBootError(m); ' +
+    'throw new Error(m.split("\\n")[0]); })(' + JSON.stringify(msg) + ');'
+  );
+}
+
 // Rewrite the import graph of esbuild's output. esbuild re-prints code with
 // normalized double-quoted specifiers, so regex matching is reliable here.
 function rewriteImports(code, fromRel, rootDir, mountPrefix, deps) {
   const rw = (spec) => rewriteSpec(spec, fromRel, rootDir, mountPrefix, deps);
 
+  // Static imports that can't resolve to anything servable are diagnosed
+  // now, while the importer and specifier are both known: the statement
+  // becomes a reporter naming the missing file and how to fix it.
+  code = code.replace(
+    /(^|\n)((?:import|export)\s[^"'\n]*?\sfrom\s*|import\s*)"([^"\n]+)";?/g,
+    (m, lead, clause, spec) => {
+      const reason = unresolvableReason(spec, fromRel, rootDir);
+      return reason ? lead + reportAndThrow(reason) : m;
+    }
+  );
   // Side-effect imports: CSS becomes a <link> injection, the rest rewrite.
   code = code.replace(/(^|\n)import\s*"([^"\n]+)";?/g, (m, lead, spec) => {
     if (/\.css$/i.test(spec) && spec.startsWith('.')) return lead + cssInject(spec);
@@ -157,13 +202,30 @@ function rewriteImports(code, fromRel, rootDir, mountPrefix, deps) {
   return code;
 }
 
-// Transform one artifact source file for native browser loading. Returns the
-// rewritten code, or null when esbuild can't parse it — callers fall back to
-// serving the file untouched, so an odd file degrades instead of breaking.
+// esbuild's structured errors → a message the boot-error overlay can show:
+// file:line:column, what esbuild said, and the offending source line. The
+// browser would reject the same file with nothing but "Failed to load".
+function describeEsbuildError(e, relPath) {
+  const errs = (e && e.errors) || [];
+  if (!errs.length) return (e && e.message) || String(e);
+  const parts = errs.slice(0, 3).map((err) => {
+    const loc = err.location || {};
+    const where = loc.line ? `${relPath}:${loc.line}:${(loc.column || 0) + 1}` : relPath;
+    const caret = loc.lineText ? `\n  ${loc.lineText}\n  ${' '.repeat(loc.column || 0)}^` : '';
+    return `${where}: ${err.text}${caret}`;
+  });
+  if (errs.length > 3) parts.push(`(+${errs.length - 3} more)`);
+  return 'Syntax error — this file could not be compiled:\n' + parts.join('\n');
+}
+
+// Transform one artifact source file for native browser loading. Returns
+// { code } with the rewritten module, or { error } with a human-readable
+// diagnosis when esbuild can't parse it — the browser couldn't parse such a
+// file either, so callers serve the diagnosis instead of the raw source.
 function transpile(source, { rootDir, relPath, mountPrefix }) {
   const ext = path.extname(relPath).toLowerCase();
   const loader = LOADERS[ext];
-  if (!loader) return null;
+  if (!loader) return { code: null, error: null };
   let out;
   try {
     out = esbuild.transformSync(source, {
@@ -183,9 +245,12 @@ function transpile(source, { rootDir, relPath, mountPrefix }) {
       },
     });
   } catch (e) {
-    return null;
+    return { code: null, error: describeEsbuildError(e, relPath) };
   }
-  return rewriteImports(out.code, relPath, rootDir, mountPrefix || '/', readDeps(rootDir));
+  return {
+    code: rewriteImports(out.code, relPath, rootDir, mountPrefix || '/', readDeps(rootDir)),
+    error: null,
+  };
 }
 
 module.exports = { transpile, canTranspile, readDeps, esmShUrl };

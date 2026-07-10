@@ -58,6 +58,18 @@ recipe (Caddy, systemd, Litestream backups).
 - Task success + time-on-task, auto-derived.
 - Zero browser permission prompts, ever.
 
+## Server-rendered apps (fake-backend sandbox)
+
+A repo with no static HTML but a recognizable server framework (Express, Koa,
+Fastify, …) becomes a **server-rendered test** ([docs/fake-backend-spec.md](docs/fake-backend-spec.md)):
+Integral provisions a throwaway Postgres database, runs the repo's own schema
+setup against it, seeds fake rows (dev-editable per test in setup), boots the
+app as a child process with dummy secrets, auto-authenticates a fake user, and
+reverse-proxies it same-origin under `/t/:id/app/*` with the usual recorder
+injection — real pages from fake data, never real credentials or a real
+database. Needs a local Postgres (`INTEGRAL_SANDBOX_PG_URL`, default
+`127.0.0.1:5432`); per spec §9 the prototype is for trusted repos only.
+
 ## Data quality (spec §5)
 
 - Anonymous, no login; one-line consent gate (linking `/privacy`).
@@ -97,6 +109,9 @@ server/
   db.js             better-sqlite3 schema (users, tests, sessions, interactions, reports)
   lib/artifacts.js  zip/html/folder ingestion + same-origin serving w/ script injection
   lib/transpile.js  serve-time esbuild transform + import rewriting (no-build React hosting)
+  lib/sandbox/      fake backend for server-rendered repos (docs/fake-backend-spec.md):
+                    classify, ephemeral Postgres + fake seed, auto-auth, outbound
+                    stubs, boot runner + registry, same-origin reverse proxy
   lib/auth.js       GitHub OAuth + sealed session cookie + dev login
   lib/plans.js      plan limits (free / pro / unlimited)
   lib/signals.js    success-signal chains (+ legacy single-target synthesis)

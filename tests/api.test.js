@@ -202,6 +202,80 @@ test('fingerprint dedupe: same device cannot complete twice', async () => {
   assert.equal(other.finishStatus, 'completed');
 });
 
+test('fingerprint dedupe resets when the developer relaunches the test', async () => {
+  const t = await createHtmlTest('Dedupe relaunch');
+  await launch(t.id);
+  const first = await runSession(t.id, { ua: 'same-device' });
+  assert.equal(first.finishStatus, 'completed');
+  const blocked = await runSession(t.id, { ua: 'same-device' });
+  assert.equal(blocked.startStatus, 409);
+  assert.equal(blocked.error, 'already_participated');
+
+  // Developer edits something and hits "Save & launch" again.
+  await launch(t.id, { task_prompt: 'Buy the updated thing' });
+  const retake = await runSession(t.id, { ua: 'same-device' });
+  assert.equal(retake.finishStatus, 'completed');
+});
+
+test('roam and post-test-notes toggles surface on the take-config endpoint', async () => {
+  const t = await createHtmlTest('Roam config');
+  await launch(t.id, { roam_enabled: true, notes_enabled: true });
+  const config = await (await fetch(`${base}/api/take/${t.id}/config`)).json();
+  assert.equal(config.roamEnabled, true);
+  assert.equal(config.notesEnabled, true);
+});
+
+test('post-test notes are collected independently of SEQ and show up in results', async () => {
+  const t = await createHtmlTest('Notes');
+  await launch(t.id, { notes_enabled: true, seq_enabled: false });
+  const { json: start } = await api('POST', `/api/take/${t.id}/sessions`, {});
+  const sp = `/api/take/${t.id}/sessions/${start.sessionId}`;
+  await api('POST', `${sp}/interactions`, {
+    items: [{ kind: 'click', x: 1, y: 1, vw: 100, vh: 100, dh: 100, t: 0, page: 'index.html' }],
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await api('POST', `${sp}/finish`, { success: true, gaveUp: false });
+  await api('POST', `${sp}/notes`, { notes: 'Loved the flow, but the button was hard to find.' });
+
+  const { json: results } = await api('GET', `/api/tests/${t.id}/results`);
+  assert.equal(results.notes.length, 1);
+  assert.equal(results.notes[0].note, 'Loved the flow, but the button was hard to find.');
+  const session = results.sessions.find((s) => s.id === start.sessionId);
+  assert.equal(session.notes, 'Loved the flow, but the button was hard to find.');
+});
+
+test('roam: client-reported task duration is used instead of total session time', async () => {
+  const t = await createHtmlTest('Roam duration');
+  await launch(t.id, { roam_enabled: true });
+  const { json: start } = await api('POST', `/api/take/${t.id}/sessions`, {});
+  const sp = `/api/take/${t.id}/sessions/${start.sessionId}`;
+  await api('POST', `${sp}/interactions`, {
+    items: [{ kind: 'click', x: 1, y: 1, vw: 100, vh: 100, dh: 100, t: 0, page: 'index.html' }],
+  });
+  await new Promise((r) => setTimeout(r, 600)); // stands in for task time + roam time
+  const fin = await api('POST', `${sp}/finish`, { success: true, gaveUp: false, taskDurationMs: 450 });
+  assert.equal(fin.json.status, 'completed');
+  const { json: results } = await api('GET', `/api/tests/${t.id}/results`);
+  const session = results.sessions.find((s) => s.id === start.sessionId);
+  assert.ok(session.durationMs >= 450 && session.durationMs < 550, `expected ~450ms, got ${session.durationMs}`);
+});
+
+test('roam: an out-of-range task duration falls back to total elapsed time', async () => {
+  const t = await createHtmlTest('Roam duration clamp');
+  await launch(t.id, { roam_enabled: true });
+  const { json: start } = await api('POST', `/api/take/${t.id}/sessions`, {});
+  const sp = `/api/take/${t.id}/sessions/${start.sessionId}`;
+  await api('POST', `${sp}/interactions`, {
+    items: [{ kind: 'click', x: 1, y: 1, vw: 100, vh: 100, dh: 100, t: 0, page: 'index.html' }],
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  const fin = await api('POST', `${sp}/finish`, { success: true, gaveUp: false, taskDurationMs: 999999 });
+  assert.equal(fin.json.status, 'completed');
+  const { json: results } = await api('GET', `/api/tests/${t.id}/results`);
+  const session = results.sessions.find((s) => s.id === start.sessionId);
+  assert.ok(session.durationMs >= 500 && session.durationMs < 999999, `expected elapsed fallback, got ${session.durationMs}`);
+});
+
 test('response cap auto-closes the test', async () => {
   const t = await createHtmlTest('Cap');
   await launch(t.id, { response_cap: 2 });

@@ -21,6 +21,13 @@
   var eventBuf = [];
   var interactionBuf = [];
 
+  // Task-completion vs. session-end: when roaming is enabled the task can
+  // finish well before the tester actually wraps up, so we latch the outcome
+  // here and keep recording until they say they're done.
+  var taskDone = false;
+  var taskDoneAt = null;
+  var pendingOutcome = null;
+
   // Success-signal chain progress. The injected recorder reloads on every
   // screen, so cross-screen state lives here: which click/screen signals have
   // latched, the last seen value of each value signal, and per-signal hit
@@ -53,7 +60,26 @@
         return;
       }
     }
-    onFinish(true, false);
+    onTaskDone(true, false);
+  }
+
+  // Task detection (success or give-up) fired. If roaming is off, this ends
+  // the session immediately, same as before. If roaming is on, the task's
+  // own duration is latched and the taker keeps going in the live app until
+  // they choose to wrap up.
+  function onTaskDone(success, gaveUp) {
+    if (taskDone) return;
+    taskDone = true;
+    if (!config.roamEnabled) return onFinish(success, gaveUp, Date.now() - sessionStart);
+    taskDoneAt = Date.now();
+    pendingOutcome = { success: success, gaveUp: gaveUp };
+    document.getElementById('taskbarlabel').textContent = 'Task complete';
+    document.getElementById('taskprompt').textContent = 'Feel free to keep exploring, or wrap up when you’re ready.';
+    var btn = document.getElementById('giveup');
+    btn.textContent = 'I’m done exploring';
+    btn.onclick = function () {
+      onFinish(pendingOutcome.success, pendingOutcome.gaveUp, taskDoneAt - sessionStart);
+    };
   }
 
   function el(html) {
@@ -194,14 +220,32 @@
       });
   }
 
-  function onFinish(success, gaveUp) {
+  function onFinish(success, gaveUp, taskDurationMs) {
     if (finished) return;
     finished = true;
+    taskbar.style.display = 'none';
     flush(false);
-    postJson('/finish', { success: success, gaveUp: gaveUp, signalHits: signalHits });
+    postJson('/finish', { success: success, gaveUp: gaveUp, signalHits: signalHits, taskDurationMs: taskDurationMs });
     overlay.style.display = 'flex';
     if (config.seqEnabled) showSeq(success);
+    else afterSeq(success);
+  }
+
+  function afterSeq(success) {
+    if (config.notesEnabled) showNotes(success);
     else showThanks(success);
+  }
+
+  function showNotes(success) {
+    overlaycard.innerHTML =
+      '<h2>One more thing</h2>' +
+      '<label>Anything else you’d like to share about your experience? (optional)</label>' +
+      '<textarea id="notesinput"></textarea>' +
+      '<div style="margin-top:12px"><button class="btn-primary" id="notessubmit">Submit</button></div>';
+    document.getElementById('notessubmit').onclick = function () {
+      postJson('/notes', { notes: document.getElementById('notesinput').value });
+      showThanks(success);
+    };
   }
 
   function showSeq(success) {
@@ -230,7 +274,7 @@
     }
     document.getElementById('seqsubmit').onclick = function () {
       postJson('/seq', { score: seqScore, comment: document.getElementById('seqcomment').value });
-      showThanks(success);
+      afterSeq(success);
     };
   }
 
@@ -245,6 +289,7 @@
     gate.style.display = 'flex';
     taskbar.style.display = 'none';
     stage.style.display = 'none';
+    gatecard.className = 'card gate-closed';
     gatecard.innerHTML = '<h2>' + msg + '</h2>';
   }
 
@@ -254,7 +299,7 @@
     return d.innerHTML;
   }
 
-  document.getElementById('giveup').onclick = function () { onFinish(false, true); };
+  document.getElementById('giveup').onclick = function () { onTaskDone(false, true); };
 
   fetch(api + '/config')
     .then(function (r) { return r.json(); })

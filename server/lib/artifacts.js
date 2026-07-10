@@ -137,18 +137,57 @@ function uiModuleOk(rootDir, moduleRel) {
 // A module that fails to boot would otherwise leave a silently blank page —
 // the worst possible feedback. The wrapper reports load/runtime errors in an
 // overlay so the developer sees *why* (bad import, missing dep, non-browser
-// code) right in the preview.
+// code) right in the preview. The first report wins: server-diagnosed causes
+// (missing file, syntax error — see diagnosticModule) arrive before the
+// loader's vague "Failed to load" event and must not be overwritten by it.
+// __integralBootFallback is that last-resort message, fired by the wrapper's
+// script onerror, which by spec carries no reason at all — so it explains
+// where the reason can be found instead.
 const BOOT_ERROR_SCRIPT =
   '<script>\n' +
   'window.__integralBootError = function (msg) {\n' +
-  "  var d = document.getElementById('integral-boot-error');\n" +
-  "  if (!d) { d = document.createElement('pre'); d.id = 'integral-boot-error'; document.body.appendChild(d); }\n" +
+  "  if (document.getElementById('integral-boot-error')) return;\n" +
+  "  var d = document.createElement('pre'); d.id = 'integral-boot-error';\n" +
   "  d.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;margin:0;background:#fff3f3;color:#8a1f1f;border:1px solid #e0b4b4;border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;z-index:2147483647';\n" +
   "  d.textContent = 'This app failed to start:\\n' + msg;\n" +
+  '  document.body.appendChild(d);\n' +
+  '};\n' +
+  'window.__integralBootFallback = function (rel) {\n' +
+  "  __integralBootError('Failed to load ' + rel + ' or one of its imports.\\n\\n" +
+  'How to fix:\\n' +
+  '1. Open the browser devtools and reload — the Console and Network tabs name the file or package that failed.\\n' +
+  "2. npm packages load from esm.sh: make sure every package you import is listed in package.json, and that your network allows esm.sh.');\n" +
   '};\n' +
   "addEventListener('error', function (e) { __integralBootError(e.message || (e.error && e.error.message) || 'Script error'); });\n" +
   "addEventListener('unhandledrejection', function (e) { __integralBootError((e.reason && (e.reason.message || e.reason)) || 'Unhandled rejection'); });\n" +
   '</script>';
+
+// Serve-time failures the server can name precisely (missing file, syntax
+// error) are delivered as a tiny module in place of the broken one: it
+// reports the cause and fix steps to the overlay, then throws so the app
+// never half-starts. A bare 404 or raw un-compilable source would reach the
+// developer only as the loader's detail-free "Failed to load" event.
+function diagnosticModule(message) {
+  return (
+    `var m = ${JSON.stringify(message)};\n` +
+    'console.error(m);\n' +
+    'if (typeof window !== "undefined" && window.__integralBootError) window.__integralBootError(m);\n' +
+    "throw new Error(m.split('\\n')[0]);\n"
+  );
+}
+
+function missingFileMessage(rel) {
+  return (
+    `./${rel} doesn't exist in this test's files.\n\n` +
+    'How to fix:\n' +
+    `1. Find what references "./${rel}" — the path must match a file exactly (case-sensitive).\n` +
+    '2. If the file exists in your project, commit and push it to the selected branch, or re-upload it.\n' +
+    '3. Reload this preview.'
+  );
+}
+
+const SYNTAX_FIX_STEPS =
+  '\n\nHow to fix: correct the error above, push the fix to the selected branch (or re-upload the file), then reload this preview.';
 
 // ---------- terminal (Ink) entry points ----------
 // An Ink entry renders ANSI to stdout, not DOM — so its wrapper hosts an
@@ -342,7 +381,7 @@ function writeEntryWrapper(dir, moduleRel) {
       `<title>${title}</title>\n</head>\n<body>\n` +
       '<div id="root"></div>\n<div id="app"></div>\n' +
       BOOT_ERROR_SCRIPT + '\n' +
-      `<script type="module" onerror="__integralBootError('Failed to load ./${moduleRel}')" src="./${moduleRel}"></script>\n` +
+      `<script type="module" onerror="__integralBootFallback('./${moduleRel}')" src="./${moduleRel}"></script>\n` +
       '</body>\n</html>\n';
   }
   fs.writeFileSync(path.join(dir, name), html);
@@ -404,13 +443,33 @@ const MIME = {
   '.map': 'application/json',
 };
 
-// Serve an artifact file; for HTML pages, inject `injectScript` (a <script>
-// tag string) before </body> so every screen of the artifact carries it.
-// `headScript` is injected at the top of <head> instead — for shims that must
-// run before any artifact script (e.g. the API-mock fetch/XHR patch).
-// `mountPrefix` is the URL path the artifact root is mounted at (e.g.
-// "/t/<id>/app/"); root-absolute references in HTML and JS are rebased onto
-// it, and JS-family files are transpiled for native module loading.
+// Mutate an HTML screen for same-origin hosting. `injectScript` (a <script>
+// tag string) goes before </body> so every screen carries it; `headScript`
+// goes at the top of <head> — for shims that must run before any artifact
+// script (e.g. the API-mock fetch/XHR patch). `mountPrefix` is the URL path
+// the artifact root is mounted at (e.g. "/t/<id>/app/"); root-absolute
+// references are rebased onto it. Shared by the static-file path below and
+// the sandbox reverse proxy (lib/sandbox/proxy.js), so proxied apps get the
+// exact same instrumentation as extracted artifacts.
+function injectIntoHtml(html, { mountPrefix, headScript, injectScript } = {}) {
+  if (mountPrefix) {
+    // src="/logo.png" means the artifact's root, not the server's —
+    // rebase (protocol-relative "//…" stays untouched).
+    html = html.replace(/(\s(?:src|href|action)=["'])\/(?!\/)/gi, '$1' + mountPrefix);
+  }
+  if (headScript) {
+    if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, (m) => m + headScript);
+    else html = headScript + html;
+  }
+  if (injectScript) {
+    if (/<\/body>/i.test(html)) html = html.replace(/<\/body>/i, injectScript + '</body>');
+    else html += injectScript;
+  }
+  return html;
+}
+
+// Serve an artifact file; HTML pages go through injectIntoHtml, and
+// JS-family files are transpiled for native module loading.
 function serveArtifactFile(res, testId, relPath, injectScript, headScript, mountPrefix) {
   const rel = safeRelPath(relPath || 'index.html');
   if (!rel) return res.status(400).send('Bad path');
@@ -418,30 +477,26 @@ function serveArtifactFile(res, testId, relPath, injectScript, headScript, mount
   if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
     full = path.join(full, 'index.html');
   }
-  if (!fs.existsSync(full)) return res.status(404).send('Not found');
   const ext = path.extname(full).toLowerCase();
+  if (!fs.existsSync(full)) {
+    // A missing JS-family file is almost always a broken module reference; a
+    // 404 would surface as a detail-free load failure, so name it instead.
+    if (canTranspile(ext)) {
+      res.setHeader('Content-Type', MIME[ext]);
+      return res.send(diagnosticModule(missingFileMessage(rel)));
+    }
+    return res.status(404).send('Not found');
+  }
   const mime = MIME[ext] || 'application/octet-stream';
   res.setHeader('Content-Type', mime);
   if (ext === '.html' || ext === '.htm') {
-    let html = fs.readFileSync(full, 'utf8');
-    if (mountPrefix) {
-      // src="/logo.png" means the artifact's root, not the server's —
-      // rebase (protocol-relative "//…" stays untouched).
-      html = html.replace(/(\s(?:src|href|action)=["'])\/(?!\/)/gi, '$1' + mountPrefix);
-    }
-    if (headScript) {
-      if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, (m) => m + headScript);
-      else html = headScript + html;
-    }
-    if (injectScript) {
-      if (/<\/body>/i.test(html)) html = html.replace(/<\/body>/i, injectScript + '</body>');
-      else html += injectScript;
-    }
-    return res.send(html);
+    const html = fs.readFileSync(full, 'utf8');
+    return res.send(injectIntoHtml(html, { mountPrefix, headScript, injectScript }));
   }
   if (canTranspile(ext)) {
     const source = fs.readFileSync(full, 'utf8');
-    const code = transpile(source, { rootDir: artifactRoot(testId), relPath: rel, mountPrefix });
+    const { code, error } = transpile(source, { rootDir: artifactRoot(testId), relPath: rel, mountPrefix });
+    if (error) return res.send(diagnosticModule(error + SYNTAX_FIX_STEPS));
     return res.send(code != null ? code : source);
   }
   res.send(fs.readFileSync(full));
@@ -460,5 +515,7 @@ module.exports = {
   uiModuleOk,
   writeEntryWrapper,
   MODULE_ENTRY_RE,
+  injectIntoHtml,
   serveArtifactFile,
+  BOOT_ERROR_SCRIPT,
 };

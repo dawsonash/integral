@@ -115,6 +115,14 @@
       }).join('');
     }
 
+    // Post-test notes
+    if (data.notes.length) {
+      $('notescard').style.display = '';
+      $('notes').innerHTML = data.notes.map(function (n) {
+        return '<div class="comment">“' + esc(n.note) + '”<div class="who">session ' + n.sessionId.slice(0, 6) + '</div></div>';
+      }).join('');
+    }
+
     // Sessions table
     var tbody = document.querySelector('#sessions tbody');
     tbody.innerHTML = '';

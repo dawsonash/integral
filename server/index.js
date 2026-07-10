@@ -18,3 +18,14 @@ setInterval(() => {
     console.error('[retention] sweep failed:', e.message);
   }
 }, 24 * 60 * 60 * 1000).unref();
+
+// Sandboxed apps are detached child processes with throwaway databases —
+// they must not outlive the server.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, async () => {
+    try {
+      await require('./lib/sandbox/registry').teardownAll();
+    } catch (e) { /* best effort */ }
+    process.exit(0);
+  });
+}

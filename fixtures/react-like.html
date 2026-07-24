@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>React-like fixture</title>
+</head>
+<body>
+<!-- Persistent chrome (header h1 "Acme") wraps content swapped three levels
+     below <body> — the shape of a real React app. The recorder must detect
+     the deep swaps and must not name screens after the persistent heading.
+     #refresh re-renders Tools identically (a keyed React re-render): it must
+     NOT create a screen. -->
+<div id="root">
+  <div class="layout">
+    <header><h1>Acme</h1><nav><button id="refresh">Refresh</button></nav></header>
+    <main>
+      <div class="content" id="content">
+        <h2>Tools</h2>
+        <ul><li>Transcriber</li><li>Captioner</li></ul>
+        <button id="open-upload">Upload audio</button>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+  var content = document.getElementById('content');
+  function render(html) {
+    var next = document.createElement('div');
+    next.innerHTML = html;
+    // Replace all children: one burst of removals + additions deep in the tree.
+    while (content.firstChild) content.removeChild(content.firstChild);
+    while (next.firstChild) content.appendChild(next.firstChild);
+  }
+  function showTools() {
+    render('<h2>Tools</h2><ul><li>Transcriber</li><li>Captioner</li></ul><button id="open-upload">Upload audio</button>');
+    wireTools();
+  }
+  function showUpload() {
+    render('<h2>Upload audio</h2><p>Drop a file below.</p><button id="do-upload">Upload</button><button id="back-tools">Back</button>');
+    document.getElementById('do-upload').addEventListener('click', function () {});
+    document.getElementById('back-tools').addEventListener('click', showTools);
+  }
+  function wireTools() {
+    document.getElementById('open-upload').addEventListener('click', showUpload);
+  }
+  document.getElementById('refresh').addEventListener('click', showTools);
+  wireTools();
+</script>
+</body>
+</html>

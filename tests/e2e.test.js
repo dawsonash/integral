@@ -168,7 +168,8 @@ test('full loop: setup UI picker → launch → testee flow → results', { time
   // Heatmap captured document-coordinate points for the entry page.
   const heat = await (await fetch(`${base}/api/tests/${t.id}/heatmap?kind=click&page=index.html`, { headers: { Cookie: cookie } })).json();
   assert.ok(heat.points.length >= 1, 'click heatmap has points');
-  assert.ok(heat.pages.includes('cart.html'), 'multi-screen pages tracked');
+  assert.ok(heat.pages.some((p) => p.key === 'cart.html'), 'multi-screen pages tracked');
+  assert.ok(heat.snapshot && heat.snapshot.sessionId, 'nav marker gives a snapshot moment');
 
   // ---------- dev: results page renders and replay plays ----------
   const rp = await browser.newPage();
@@ -190,7 +191,130 @@ test('full loop: setup UI picker → launch → testee flow → results', { time
     return f.contentDocument.documentElement.outerHTML;
   });
   assert.ok(!replayedInputs.includes('secret@example.com'), 'replayed DOM stays masked');
+
+  // Heatmap background is a paused rrweb snapshot, not a live iframe.
+  await rp.waitForSelector('#heatstage .replayer-wrapper iframe', { timeout: 15000 });
   await rp.close();
+});
+
+test('SPA screens split the heatmap: pushState routes and pure DOM swaps', { timeout: 120000 }, async () => {
+  const fd = new FormData();
+  fd.append('name', 'SPA screens');
+  fd.append('html', fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'spa.html'), 'utf8'));
+  const t = await (await fetch(base + '/api/tests', { method: 'POST', body: fd, headers: { Cookie: cookie } })).json();
+  await fetch(`${base}/api/tests/${t.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({
+      task_prompt: 'Buy the pro plan',
+      success_type: 'click',
+      success_selector: '#buy',
+      status: 'live',
+    }),
+  });
+
+  // Two testers take the same wizard detour so we can assert the DOM-derived
+  // screen key is stable across sessions (buckets must aggregate, not fork).
+  for (const ua of ['integral-e2e-spa-1', 'integral-e2e-spa-2']) {
+    const page = await browser.newPage();
+    await page.setUserAgent(ua);
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.goto(`${base}/t/${t.id}`, { waitUntil: 'networkidle0' });
+    await page.click('#consent');
+    await page.waitForSelector('#appframe');
+    const af = await (await page.$('#appframe')).contentFrame();
+    await af.waitForSelector('#to-wizard');
+    await new Promise((r) => setTimeout(r, 1200)); // dwell on home (baseline screen)
+    await af.click('#to-wizard');                  // DOM swap, no URL change
+    await new Promise((r) => setTimeout(r, 800));  // let the swap detector commit
+    await af.click('#wizard-ok');                  // interaction on the wizard screen
+    await new Promise((r) => setTimeout(r, 400));
+    await af.click('#go-plans');                   // pushState route change
+    await af.waitForSelector('#buy');
+    await new Promise((r) => setTimeout(r, 1200));
+    await af.click('#buy');                        // success + interaction on 'plans'
+    await page.waitForSelector('#overlay', { visible: true });
+    await new Promise((r) => setTimeout(r, 3000)); // let the shell flush buffers
+    await page.close();
+  }
+
+  const heat = await (await fetch(`${base}/api/tests/${t.id}/heatmap?kind=click&page=index.html`, { headers: { Cookie: cookie } })).json();
+  const keys = heat.pages.map((p) => p.key);
+  assert.ok(keys.includes('index.html'), `entry screen tracked (got ${keys})`);
+  assert.ok(keys.includes('index.html::Wizard'), `DOM-swap screen tracked (got ${keys})`);
+  assert.ok(keys.includes('plans'), `pushState route tracked (got ${keys})`);
+  // Stability: two sessions, still exactly one wizard bucket.
+  assert.equal(keys.filter((k) => k.indexOf('::') !== -1).length, 1, `DOM screens must not fork per session (got ${keys})`);
+
+  const wiz = await (await fetch(
+    `${base}/api/tests/${t.id}/heatmap?kind=click&page=${encodeURIComponent('index.html::Wizard')}`,
+    { headers: { Cookie: cookie } }
+  )).json();
+  assert.ok(wiz.points.length >= 2, 'wizard clicks bucketed to the wizard screen');
+  assert.ok(wiz.snapshot && wiz.snapshot.sessionId, 'wizard screen has a snapshot moment');
+});
+
+test('deep DOM swaps under persistent chrome: screens split without chrome-named keys', { timeout: 120000 }, async () => {
+  // React-shaped fixture: persistent header h1 "Acme", content swapped three
+  // levels below <body>. Screens must split on the deep swaps, be named after
+  // the content heading (not the chrome), and returning to the first screen
+  // must map back to the bare route key instead of forking "::Tools".
+  const fd = new FormData();
+  fd.append('name', 'React-like screens');
+  fd.append('html', fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'react-like.html'), 'utf8'));
+  const t = await (await fetch(base + '/api/tests', { method: 'POST', body: fd, headers: { Cookie: cookie } })).json();
+  await fetch(`${base}/api/tests/${t.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({
+      task_prompt: 'Upload an audio file',
+      success_type: 'click',
+      success_selector: '#do-upload',
+      status: 'live',
+    }),
+  });
+
+  for (const ua of ['integral-e2e-react-1', 'integral-e2e-react-2']) {
+    const page = await browser.newPage();
+    await page.setUserAgent(ua);
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.goto(`${base}/t/${t.id}`, { waitUntil: 'networkidle0' });
+    await page.click('#consent');
+    await page.waitForSelector('#appframe');
+    const af = await (await page.$('#appframe')).contentFrame();
+    await af.waitForSelector('#open-upload');
+    await new Promise((r) => setTimeout(r, 1200)); // dwell on Tools (baseline screen)
+    await af.click('#refresh');                    // identical re-render: must not fork
+    await new Promise((r) => setTimeout(r, 800));
+    await af.click('#open-upload');                // deep swap → Upload screen
+    await new Promise((r) => setTimeout(r, 800));
+    await af.click('#back-tools');                 // back to Tools: must map to the bare key
+    await new Promise((r) => setTimeout(r, 800));
+    await af.click('#open-upload');                // revisit: key must be stable
+    await af.waitForSelector('#do-upload');
+    await new Promise((r) => setTimeout(r, 800));
+    await af.click('#do-upload');                  // success on the Upload screen
+    await page.waitForSelector('#overlay', { visible: true });
+    await new Promise((r) => setTimeout(r, 3000)); // let the shell flush buffers
+    await page.close();
+  }
+
+  const heat = await (await fetch(`${base}/api/tests/${t.id}/heatmap?kind=click&page=index.html`, { headers: { Cookie: cookie } })).json();
+  const keys = heat.pages.map((p) => p.key);
+  assert.ok(keys.includes('index.html'), `Tools screen on the bare route key (got ${keys})`);
+  assert.ok(keys.includes('index.html::Upload audio'), `deep-swap screen tracked (got ${keys})`);
+  assert.ok(!keys.some((k) => k.includes('Acme')), `persistent chrome must not name screens (got ${keys})`);
+  assert.ok(!keys.includes('index.html::Tools'), `return to the first screen must not fork (got ${keys})`);
+  assert.equal(keys.filter((k) => k.indexOf('::') !== -1).length, 1, `exactly one DOM screen across sessions (got ${keys})`);
+
+  const up = await (await fetch(
+    `${base}/api/tests/${t.id}/heatmap?kind=click&page=${encodeURIComponent('index.html::Upload audio')}`,
+    { headers: { Cookie: cookie } }
+  )).json();
+  // The swap-triggering #back-tools click is captured before the debounced
+  // commit, so it belongs to the Upload screen: 2 clicks × 2 sessions.
+  assert.ok(up.points.length >= 4, `back + upload clicks bucketed to the Upload screen (got ${up.points.length})`);
+  assert.ok(up.snapshot && up.snapshot.sessionId, 'Upload screen has a snapshot moment');
 });
 
 test('chained signals: record by demonstration, wrong path waits, right path succeeds', { timeout: 120000 }, async () => {

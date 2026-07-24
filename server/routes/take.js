@@ -193,17 +193,22 @@ router.post('/api/take/:testId/sessions/:sessionId/interactions', ingestLimiter,
   const items = req.body?.items;
   if (Array.isArray(items)) {
     const tx = db.transaction((rows) => {
+      // 'nav' rows are screen-transition markers, not tester activity — they
+      // must not count toward interaction_count or a load-and-leave session
+      // would dodge the no_interaction discard.
+      let counted = 0;
       for (const it of rows) {
-        if (!['click', 'move', 'scroll', 'key'].includes(it.kind)) continue;
+        if (!['click', 'move', 'scroll', 'key', 'nav'].includes(it.kind)) continue;
         insertInteraction.run(
           req.session.id, String(it.page || '').slice(0, 500), it.kind,
           Number(it.x) || 0, Number(it.y) || 0,
           Number(it.vw) || 0, Number(it.vh) || 0, Number(it.dh) || 0,
           Number(it.t) || 0
         );
+        if (it.kind !== 'nav') counted++;
       }
       db.prepare('UPDATE sessions SET interaction_count = interaction_count + ? WHERE id = ?').run(
-        rows.length, req.session.id
+        counted, req.session.id
       );
     });
     tx(items);

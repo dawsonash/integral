@@ -9,6 +9,7 @@ const { planFor } = require('../lib/plans');
 const { deleteTestData } = require('../lib/purge');
 const { uploadLimiter } = require('../lib/ratelimit');
 const { signalsFor, validateSignals } = require('../lib/signals');
+const { groupPages } = require('../lib/screens');
 const {
   artifactRoot, ingestHtml, ingestZip, ingestFiles, listHtmlFiles,
   ensureEntry, isModuleEntry, appRootFor, uiModuleOk, writeEntryWrapper,
@@ -455,26 +456,75 @@ router.get('/api/tests/:id/sessions/:sessionId/events', ownedTest, (req, res) =>
   res.json({ events });
 });
 
-// Aggregated heatmap points for one artifact page.
+// Aggregated heatmap points for one screen. Concrete screen keys recorded by
+// testers ("event/123", "index.html::Checkout") are grouped under normalized
+// keys ("event/{id}"), so `page` here is a normalized group key. Alongside
+// the points, pick a representative rrweb moment (`snapshot`) so the client
+// can render the screen the way a real tester saw it.
 router.get('/api/tests/:id/heatmap', ownedTest, (req, res) => {
   const page = req.query.page || '';
   const kind = ['click', 'move', 'scroll'].includes(req.query.kind) ? req.query.kind : 'click';
+
+  const pageCounts = db
+    .prepare(
+      `SELECT i.page, COUNT(*) AS count FROM interactions i
+       JOIN sessions s ON s.id = i.session_id
+       WHERE s.test_id = ? AND s.status = 'completed'
+       GROUP BY i.page`
+    )
+    .all(req.params.id);
+  const groups = groupPages(pageCounts).sort((a, b) => b.count - a.count);
+
+  // Concrete pages behind the requested group; exact match keeps old-style
+  // links (and yet-ungrouped keys) working.
+  const group = groups.find((g) => g.key === page);
+  const concretes = (group ? group.concretes : [page]).slice(0, 200);
+
+  const ph = concretes.map(() => '?').join(',');
   const rows = db
     .prepare(
       `SELECT i.x, i.y, i.vw, i.vh, i.dh FROM interactions i
        JOIN sessions s ON s.id = i.session_id
-       WHERE s.test_id = ? AND s.status = 'completed' AND i.kind = ? AND i.page = ?
+       WHERE s.test_id = ? AND s.status = 'completed' AND i.kind = ? AND i.page IN (${ph})
        LIMIT 20000`
     )
-    .all(req.params.id, kind, page);
-  const pages = db
+    .all(req.params.id, kind, ...concretes);
+
+  // Snapshot moment: prefer a session with a nav marker into this screen
+  // (the DOM right after the transition is the screen itself), weighted by
+  // how much that session actually interacted with it. Sessions recorded
+  // before nav markers existed fall back to the first interaction there.
+  const nav = db
     .prepare(
-      `SELECT DISTINCT i.page FROM interactions i JOIN sessions s ON s.id = i.session_id
-       WHERE s.test_id = ? AND s.status = 'completed'`
+      `SELECT i.session_id AS sessionId, MIN(i.t) AS t, s.started_at AS startedAt,
+              (SELECT COUNT(*) FROM interactions i2
+                WHERE i2.session_id = i.session_id AND i2.kind != 'nav' AND i2.page IN (${ph})) AS activity
+       FROM interactions i JOIN sessions s ON s.id = i.session_id
+       WHERE s.test_id = ? AND s.status = 'completed' AND i.kind = 'nav' AND i.page IN (${ph})
+       GROUP BY i.session_id
+       ORDER BY activity DESC, t ASC LIMIT 1`
     )
-    .all(req.params.id)
-    .map((r) => r.page);
-  res.json({ points: rows, pages });
+    .get(...concretes, req.params.id, ...concretes);
+  let snapshot = null;
+  if (nav) {
+    snapshot = { sessionId: nav.sessionId, at: nav.startedAt + nav.t + 500 };
+  } else {
+    const first = db
+      .prepare(
+        `SELECT i.session_id AS sessionId, MIN(i.t) AS t, s.started_at AS startedAt
+         FROM interactions i JOIN sessions s ON s.id = i.session_id
+         WHERE s.test_id = ? AND s.status = 'completed' AND i.kind != 'nav' AND i.page IN (${ph})
+         GROUP BY i.session_id ORDER BY t ASC LIMIT 1`
+      )
+      .get(req.params.id, ...concretes);
+    if (first) snapshot = { sessionId: first.sessionId, at: first.startedAt + first.t + 100 };
+  }
+
+  res.json({
+    points: rows,
+    pages: groups.map((g) => ({ key: g.key, count: g.count, representative: g.representative })),
+    snapshot,
+  });
 });
 
 module.exports = router;

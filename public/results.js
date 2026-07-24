@@ -238,14 +238,76 @@
   };
 
   // ---------- heatmap ----------
+  // The background is a paused rrweb snapshot from a real session — the DOM a
+  // tester actually saw on that screen. A live iframe can't render DOM-state
+  // screens ("index.html::Checkout") or auth-gated pages at all.
+  var heatEventsCache = {}; // sessionId -> events promise
+  var bgReplayer = null;
+  var bgKey = null;
+
+  function heatEvents(sid) {
+    if (!heatEventsCache[sid]) {
+      heatEventsCache[sid] = fetch('/api/tests/' + testId + '/sessions/' + sid + '/events')
+        .then(function (r) { return r.json(); })
+        .then(function (j) { return j.events || []; });
+    }
+    return heatEventsCache[sid];
+  }
+
+  function clearStage() {
+    var stage = $('heatstage');
+    if (bgReplayer) {
+      try { bgReplayer.pause(); } catch (e) { /* noop */ }
+      bgReplayer = null;
+    }
+    Array.prototype.slice.call(stage.children).forEach(function (c) {
+      if (c.id !== 'heatempty') stage.removeChild(c);
+    });
+  }
+
+  function renderSnapshot(snapshot) {
+    var stage = $('heatstage');
+    if (!snapshot) {
+      clearStage();
+      bgKey = null;
+      $('heatempty').style.display = 'block';
+      return Promise.resolve();
+    }
+    var key = snapshot.sessionId + ':' + snapshot.at;
+    if (key === bgKey) return Promise.resolve(); // kind switch — background unchanged
+    return heatEvents(snapshot.sessionId).then(function (events) {
+      if (events.length < 2) {
+        clearStage();
+        bgKey = null;
+        $('heatempty').style.display = 'block';
+        return;
+      }
+      clearStage();
+      $('heatempty').style.display = 'none';
+      bgKey = key;
+      bgReplayer = new rrweb.Replayer(events, { root: stage, mouseTail: false });
+      var meta = events.find(function (e) { return e.type === 4; });
+      var recW = meta ? meta.data.width : 1280;
+      var recH = meta ? meta.data.height : 800;
+      var scale = stage.clientWidth / recW;
+      var wrapper = stage.querySelector('.replayer-wrapper');
+      if (wrapper) wrapper.style.transform = 'scale(' + scale + ')';
+      stage.style.height = Math.min(560, Math.round(recH * scale)) + 'px';
+      var total = bgReplayer.getMetaData().totalTime;
+      var offset = Math.max(0, Math.min(snapshot.at - events[0].timestamp, total));
+      bgReplayer.pause(offset);
+    });
+  }
+
   function loadHeatmap() {
     var page = $('heatpage').value;
     var kind = $('heatkind').value;
     if (!page && page !== '') return;
-    $('heatframe').src = '/t/' + testId + '/view/' + page;
     fetch('/api/tests/' + testId + '/heatmap?kind=' + kind + '&page=' + encodeURIComponent(page))
       .then(function (r) { return r.json(); })
-      .then(function (j) { drawHeatmap(j.points, kind); });
+      .then(function (j) {
+        renderSnapshot(j.snapshot).then(function () { drawHeatmap(j.points, kind); });
+      });
   }
 
   function drawHeatmap(points, kind) {
@@ -289,16 +351,24 @@
   $('heatpage').onchange = loadHeatmap;
 
   function initHeatmap() {
-    fetch('/api/tests/' + testId + '/heatmap?kind=click&page=' + encodeURIComponent(data.test.entry_path || ''))
+    var entry = data.test.entry_path || '';
+    fetch('/api/tests/' + testId + '/heatmap?kind=click&page=' + encodeURIComponent(entry))
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        var pages = j.pages.length ? j.pages : [data.test.entry_path];
+        var pages = j.pages.length ? j.pages : [{ key: entry, count: 0 }];
+        var hasEntry = pages.some(function (p) { return p.key === entry; });
         var sel = $('heatpage');
         sel.innerHTML = '';
-        pages.forEach(function (p) {
-          sel.appendChild(new Option(p || '(entry)', p, false, p === data.test.entry_path));
+        pages.forEach(function (p, i) {
+          var label = (p.key.replace('::', ' · ') || '(entry)') + (p.count ? ' (' + p.count + ')' : '');
+          sel.appendChild(new Option(label, p.key, false, hasEntry ? p.key === entry : i === 0));
         });
-        loadHeatmap();
+        if (hasEntry || !j.pages.length) {
+          // The initial fetch already answered for the selected screen.
+          renderSnapshot(j.snapshot).then(function () { drawHeatmap(j.points, 'click'); });
+        } else {
+          loadHeatmap();
+        }
       });
   }
 

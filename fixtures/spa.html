@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPA fixture</title>
+</head>
+<body>
+<!-- Home is static markup so the recorder's baseline screen is the real home
+     screen; the other screens render client-side. Exercises both screen-change
+     mechanisms: pushState routing (plans) and a bare DOM swap (wizard). -->
+<div id="view">
+  <h1>Home</h1>
+  <p>Welcome to the fixture app.</p>
+  <button id="to-plans">See plans</button>
+  <button id="to-wizard">Start wizard</button>
+</div>
+<script>
+  var view = document.getElementById('view');
+  function render(html) {
+    var next = document.createElement('div');
+    next.innerHTML = html;
+    var old = view.firstElementChild ? view : null;
+    // Replace all children: one burst of removals + additions at the #view level.
+    while (view.firstChild) view.removeChild(view.firstChild);
+    while (next.firstChild) view.appendChild(next.firstChild);
+  }
+  function wirePlans() {
+    render('<h1>Plans</h1><p>Pick a plan.</p><button id="buy">Buy pro</button>');
+    document.getElementById('buy').addEventListener('click', function () {
+      render('<h1>Thanks</h1><p>Purchase complete.</p>');
+    });
+  }
+  function wireWizard() {
+    render('<h1>Wizard</h1><p>Step one of one.</p><button id="wizard-ok">OK</button><button id="go-plans">Skip to plans</button>');
+    document.getElementById('wizard-ok').addEventListener('click', function () {});
+    document.getElementById('go-plans').addEventListener('click', function () {
+      history.pushState({}, '', 'plans');
+      wirePlans();
+    });
+  }
+  document.getElementById('to-plans').addEventListener('click', function () {
+    history.pushState({}, '', 'plans');
+    wirePlans();
+  });
+  document.getElementById('to-wizard').addEventListener('click', function () {
+    wireWizard(); // no URL change: a pure DOM-state screen
+  });
+</script>
+</body>
+</html>

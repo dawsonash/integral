@@ -410,8 +410,72 @@ test('heatmap endpoint aggregates completed-session interactions by page', async
   await runSession(t.id, { interactions: 5, ua: 'heat-1' });
   const { json } = await api('GET', `/api/tests/${t.id}/heatmap?kind=click&page=index.html`);
   assert.equal(json.points.length, 5);
-  assert.deepEqual(json.pages, ['index.html']);
+  assert.deepEqual(json.pages, [{ key: 'index.html', count: 5, representative: 'index.html' }]);
   assert.equal(json.points[0].vw, 1280);
+  // Legacy sessions have no nav markers: the snapshot falls back to the
+  // moment of the first interaction on the screen.
+  assert.ok(json.snapshot && json.snapshot.sessionId);
+});
+
+test('heatmap groups dynamic URL segments and picks a nav-marker snapshot', async () => {
+  const t = await createHtmlTest('Heatmap grouping');
+  await launch(t.id);
+  const start = await fetch(`${base}/api/take/${t.id}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'heat-group' },
+    body: JSON.stringify({}),
+  });
+  const { sessionId } = await start.json();
+  const sp = `/api/take/${t.id}/sessions/${sessionId}`;
+  const base_ = { x: 10, y: 20, vw: 1280, vh: 800, dh: 1600 };
+  await api('POST', `${sp}/interactions`, {
+    items: [
+      { kind: 'nav', ...base_, t: 0, page: 'event/123' },
+      { kind: 'click', ...base_, t: 50, page: 'event/123' },
+      { kind: 'click', ...base_, t: 90, page: 'event/123' },
+      { kind: 'nav', ...base_, t: 200, page: 'event/456' },
+      { kind: 'click', ...base_, t: 250, page: 'event/456' },
+      { kind: 'click', ...base_, t: 300, page: 'search' },
+      { kind: 'click', ...base_, t: 350, page: 'index.html::Checkout' },
+    ],
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await api('POST', `${sp}/finish`, { success: true, gaveUp: false });
+
+  const { json } = await api('GET', `/api/tests/${t.id}/heatmap?kind=click&page=${encodeURIComponent('event/{id}')}`);
+  // event/123 + event/456 aggregate under one normalized key…
+  assert.equal(json.points.length, 3); // nav rows excluded from points
+  const keys = json.pages.map((p) => p.key);
+  assert.ok(keys.includes('event/{id}'));
+  // …while route words and DOM-screen keys survive untouched.
+  assert.ok(keys.includes('search'));
+  assert.ok(keys.includes('index.html::Checkout'));
+  const group = json.pages.find((p) => p.key === 'event/{id}');
+  assert.equal(group.representative, 'event/123'); // most interactions in the group
+  // Snapshot anchors at the earliest nav marker into the group (+500ms settle).
+  assert.equal(json.snapshot.sessionId, sessionId);
+  const { json: results } = await api('GET', `/api/tests/${t.id}/results`);
+  const sess = results.sessions.find((s) => s.id === sessionId);
+  assert.equal(json.snapshot.at - sess.startedAt, 0 + 500);
+});
+
+test('nav markers do not count as interactions for junk filtering', async () => {
+  const t = await createHtmlTest('Nav-only session');
+  await launch(t.id);
+  const start = await fetch(`${base}/api/take/${t.id}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'nav-only' },
+    body: JSON.stringify({}),
+  });
+  const { sessionId } = await start.json();
+  const sp = `/api/take/${t.id}/sessions/${sessionId}`;
+  await api('POST', `${sp}/interactions`, {
+    items: [{ kind: 'nav', x: 0, y: 0, vw: 1280, vh: 800, dh: 1600, t: 0, page: 'index.html' }],
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  const fin = await api('POST', `${sp}/finish`, { success: false, gaveUp: false });
+  // A session that only loaded the page (nav marker, no activity) is still junk.
+  assert.equal(fin.json.status, 'discarded');
 });
 
 // ---------------------------------------------------------------------------

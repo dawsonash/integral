@@ -22,7 +22,10 @@
   .funnel .fbar { height: 22px; background: #5a5bd6; border-radius: 0 4px 4px 0; min-width: 2px; }
   .funnel .fval { font-size: 13px; font-weight: 600; width: 90px; }
   #heatwrap { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  #heatframe { width: 100%; height: 560px; border: 0; display: block; }
+  #heatstage { position: relative; overflow: hidden; height: 560px; background: #fff; }
+  #heatstage iframe { border: 0; background: #fff; pointer-events: none; }
+  #heatstage .replayer-wrapper { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+  #heatempty { display: none; padding: 40px 16px; text-align: center; }
   #heatcanvas { position: absolute; inset: 0; pointer-events: none; }
   #replaymodal { display: none; position: fixed; inset: 0; background: rgba(20,20,40,.6); z-index: 60; align-items: center; justify-content: center; padding: 24px; }
   #replaybox { background: var(--card); border-radius: 12px; padding: 16px; max-width: 95vw; max-height: 92vh; overflow: auto; }
@@ -82,7 +85,7 @@
         <option value="scroll">Scroll depth</option>
       </select></div>
     </div>
-    <div id="heatwrap"><iframe id="heatframe" title="Heatmap page"></iframe><canvas id="heatcanvas"></canvas></div>
+    <div id="heatwrap"><div id="heatstage" title="Heatmap screen"><p id="heatempty" class="muted">No preview for this screen.</p></div><canvas id="heatcanvas"></canvas></div>
   </div>
 
   <div class="card">

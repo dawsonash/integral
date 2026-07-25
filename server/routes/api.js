@@ -5,7 +5,8 @@ const multer = require('multer');
 const { db, EVENTS_DIR } = require('../db');
 const { newId } = require('../lib/util');
 const { requireUser } = require('../lib/auth');
-const { planFor } = require('../lib/plans');
+const { planFor, scopeFor } = require('../lib/plans');
+const { teamForUser } = require('../lib/teams');
 const { deleteTestData } = require('../lib/purge');
 const { uploadLimiter } = require('../lib/ratelimit');
 const { signalsFor, validateSignals } = require('../lib/signals');
@@ -37,25 +38,39 @@ function testJson(t) {
 // scoped to the owner. The testee surface (routes/take.js) stays anonymous.
 router.use('/api/tests', requireUser);
 
+// Reachability, not authorship: on a Team plan every member works on the same
+// tests, so the gate is "is this test in my pool" rather than "did I make it".
 function ownedTest(req, res, next) {
   const t = getTest.get(req.params.id);
-  if (!t || t.user_id !== req.user.id) return res.status(404).json({ error: 'not_found' });
+  if (!t) return res.status(404).json({ error: 'not_found' });
+  const team = teamForUser(req.user.id);
+  const mine = team ? t.team_id === team.id : t.user_id === req.user.id && !t.team_id;
+  if (!mine) return res.status(404).json({ error: 'not_found' });
   req.test = t;
   next();
 }
 
 router.get('/api/tests', (req, res) => {
+  const scope = scopeFor(req.user);
   const tests = db
-    .prepare('SELECT * FROM tests WHERE user_id = ? ORDER BY created_at DESC')
-    .all(req.user.id);
+    .prepare(`SELECT t.* FROM tests t WHERE ${scope.where} ORDER BY t.created_at DESC`)
+    .all(...scope.args);
   const counts = db
     .prepare(
       `SELECT s.test_id, COUNT(*) AS n FROM sessions s JOIN tests t ON t.id = s.test_id
-       WHERE t.user_id = ? AND s.status = 'completed' GROUP BY s.test_id`
+       WHERE ${scope.where} AND s.status = 'completed' GROUP BY s.test_id`
     )
-    .all(req.user.id)
+    .all(...scope.args)
     .reduce((acc, r) => ((acc[r.test_id] = r.n), acc), {});
-  res.json(tests.map((t) => ({ ...t, completed_count: counts[t.id] || 0 })));
+  // Team lists show who made each test; solo lists have nothing to disambiguate.
+  const authors = scope.teamId
+    ? db.prepare('SELECT id, login FROM users').all().reduce((acc, u) => ((acc[u.id] = u.login), acc), {})
+    : {};
+  res.json(tests.map((t) => ({
+    ...t,
+    completed_count: counts[t.id] || 0,
+    author: scope.teamId ? authors[t.user_id] || null : null,
+  })));
 });
 
 // Create a test from a connected repo, a pasted HTML string, an uploaded zip,
@@ -147,11 +162,12 @@ router.post('/api/tests', uploadLimiter, upload.any(), async (req, res) => {
       return res.status(400).json({ error: 'no_html', message: 'Artifact contains no HTML page or React entry module.' });
     }
   }
+  const team = teamForUser(req.user.id);
   db.prepare(
-    `INSERT INTO tests (id, name, source_type, entry_path, user_id, created_at,
+    `INSERT INTO tests (id, name, source_type, entry_path, user_id, team_id, created_at,
        repo_full_name, repo_branch, repo_path, repo_synced_at, backend_config)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, name, sourceType, entry, req.user.id, Date.now(),
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, name, sourceType, entry, req.user.id, team ? team.id : null, Date.now(),
     repoCols.full_name, repoCols.branch, repoCols.path, repoCols.synced_at,
     backendConfig ? JSON.stringify(backendConfig) : null);
   res.json(testJson(getTest.get(id)));
@@ -225,15 +241,17 @@ router.post('/api/tests/:id/backend-config/detect', ownedTest, (req, res) => {
 router.post('/api/tests/sample', (req, res) => {
   const id = newId(10);
   fs.cpSync(path.join(__dirname, '..', '..', 'fixtures', 'demo-shop'), artifactRoot(id), { recursive: true });
+  const team = teamForUser(req.user.id);
   db.prepare(
-    `INSERT INTO tests (id, name, source_type, entry_path, task_prompt, success_signals, user_id, created_at)
-     VALUES (?, ?, 'sample', 'index.html', ?, ?, ?, ?)`
+    `INSERT INTO tests (id, name, source_type, entry_path, task_prompt, success_signals, user_id, team_id, created_at)
+     VALUES (?, ?, 'sample', 'index.html', ?, ?, ?, ?, ?)`
   ).run(
     id,
     'Sample — Hoodie Shop checkout',
     'Add the blue hoodie to your cart and check out.',
     JSON.stringify([{ kind: 'click', selector: '#checkout', label: 'Check out', page: 'cart.html' }]),
     req.user.id,
+    team ? team.id : null,
     Date.now()
   );
   res.json(testJson(getTest.get(id)));
@@ -305,12 +323,14 @@ router.patch('/api/tests/:id', express.json(), ownedTest, (req, res) => {
     if (!signalsFor(effective).length) {
       return res.status(400).json({ error: 'missing_success_signal', message: 'Record at least one success step before launching.' });
     }
-    // Plan gate: concurrent live tests (spec §8's volume axis).
+    // Plan gate: concurrent live tests (spec §8's volume axis). On a team the
+    // allowance is pooled, so the count spans everyone's tests.
     if (t.status !== 'live') {
       const plan = planFor(req.user);
+      const scope = scopeFor(req.user);
       const live = db
-        .prepare("SELECT COUNT(*) AS n FROM tests WHERE user_id = ? AND status = 'live' AND id != ?")
-        .get(req.user.id, t.id).n;
+        .prepare(`SELECT COUNT(*) AS n FROM tests t WHERE ${scope.where} AND t.status = 'live' AND t.id != ?`)
+        .get(...scope.args, t.id).n;
       if (live >= plan.activeTests) {
         return res.status(403).json({
           error: 'plan_limit_active_tests',

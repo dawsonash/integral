@@ -94,3 +94,15 @@ a { color: var(--accent); }
   padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent;
 }
 .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Plan chooser (dashboard Upgrade button). Nested cards, so they drop the
+   outer card's bottom margin and sit side by side. */
+.plangrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.plangrid .plan { margin-bottom: 0; }
+.plangrid .plan h3 { font-size: 15px; margin: 0 0 6px; }
+.planprice { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+.planprice .muted { font-size: 13px; font-weight: 500; }
+.plangrid .plan button { margin-top: 12px; }
+@media (max-width: 700px) {
+  .plangrid { grid-template-columns: 1fr; }
+}

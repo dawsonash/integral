@@ -27,6 +27,39 @@ CREATE TABLE IF NOT EXISTS users (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS teams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  owner_user_id INTEGER NOT NULL REFERENCES users(id),
+  plan TEXT NOT NULL DEFAULT 'free',
+  billing_interval TEXT NOT NULL DEFAULT 'month',
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  stripe_seat_item_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  role TEXT NOT NULL DEFAULT 'member',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (team_id, user_id)
+);
+
+-- One team per user: the plan a member is entitled to must be unambiguous.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
+
+CREATE TABLE IF NOT EXISTS team_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  team_id INTEGER NOT NULL REFERENCES teams(id),
+  invitee TEXT NOT NULL,
+  token TEXT UNIQUE NOT NULL,
+  invited_by INTEGER REFERENCES users(id),
+  created_at INTEGER NOT NULL,
+  accepted_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   test_id TEXT NOT NULL,
@@ -119,6 +152,12 @@ ensureColumn('tests', 'api_mocks', 'TEXT');
 // Server-rendered tests: how to boot the app against a fake backend (JSON,
 // see docs/fake-backend-spec.md §5). NULL for static/SPA tests.
 ensureColumn('tests', 'backend_config', 'TEXT');
+// Team-owned tests: set when the creator is in a team. NULL means a personal
+// test, visible only to its user_id owner.
+ensureColumn('tests', 'team_id', 'INTEGER REFERENCES teams(id)');
+// Which cadence the user's individual subscription renews on ('month'|'year').
+ensureColumn('users', 'billing_interval', 'TEXT');
 db.exec('CREATE INDEX IF NOT EXISTS idx_tests_user ON tests(user_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_tests_team ON tests(team_id)');
 
 module.exports = { db, DATA_DIR, ARTIFACTS_DIR, EVENTS_DIR };

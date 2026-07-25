@@ -3,7 +3,9 @@ const crypto = require('crypto');
 const { db } = require('../db');
 const { setSessionCookie, clearSessionCookie, parseCookies } = require('../lib/session');
 const { requireUser, upsertUser, githubConfigured, devLoginEnabled } = require('../lib/auth');
-const { planFor, monthStart } = require('../lib/plans');
+const { planFor, scopeFor, monthStart } = require('../lib/plans');
+const { billingConfigured } = require('../lib/prices');
+const teams = require('../lib/teams');
 const { deleteUserData } = require('../lib/purge');
 
 const router = express.Router();
@@ -100,7 +102,7 @@ router.get('/auth/github/callback', async (req, res) => {
 router.get('/auth/dev', (req, res) => {
   if (!devLoginEnabled()) return res.status(404).send('Not found');
   const login = String(req.query.login || 'dev').slice(0, 40);
-  const plan = ['free', 'pro', 'unlimited'].includes(req.query.plan) ? req.query.plan : 'unlimited';
+  const plan = ['free', 'individual', 'pro', 'unlimited'].includes(req.query.plan) ? req.query.plan : 'unlimited';
   const user = upsertUser({ githubId: 'dev:' + login, login, name: login, plan });
   if (req.query.plan) db.prepare('UPDATE users SET plan = ? WHERE id = ?').run(plan, user.id);
   setSessionCookie(res, { uid: user.id });
@@ -120,23 +122,35 @@ router.post('/auth/logout', (req, res) => {
 router.get('/api/me', requireUser, (req, res) => {
   const u = req.user;
   const plan = planFor(u);
+  // Usage is measured over whatever pool the plan grants: a team's limits are
+  // shared, so a member's numbers are the whole team's numbers.
+  const scope = scopeFor(u);
   const activeTests = db
-    .prepare("SELECT COUNT(*) AS n FROM tests WHERE user_id = ? AND status = 'live'")
-    .get(u.id).n;
+    .prepare(`SELECT COUNT(*) AS n FROM tests t WHERE ${scope.where} AND t.status = 'live'`)
+    .get(...scope.args).n;
   const responsesThisMonth = db
     .prepare(
       `SELECT COUNT(*) AS n FROM sessions s JOIN tests t ON t.id = s.test_id
-       WHERE t.user_id = ? AND s.status = 'completed' AND s.started_at >= ?`
+       WHERE ${scope.where} AND s.status = 'completed' AND s.started_at >= ?`
     )
-    .get(u.id, monthStart()).n;
+    .get(...scope.args, monthStart()).n;
+  const team = teams.teamForUser(u.id);
   res.json({
     id: u.id,
     login: u.login,
     name: u.name,
     email: u.email,
     avatarUrl: u.avatar_url,
-    plan: u.plan,
-    billingConfigured: !!process.env.STRIPE_SECRET_KEY,
+    // The entitlement actually in force. A team member's personal users.plan
+    // row is irrelevant while the team is paying, so report the plan label the
+    // dashboard should show.
+    plan: team && team.plan === 'team' ? 'team' : u.plan,
+    planLabel: plan.label,
+    billingInterval: (team && team.plan === 'team' ? team.billing_interval : u.billing_interval) || null,
+    team: team
+      ? { id: team.id, name: team.name, plan: team.plan, role: teams.roleFor(team.id, u.id), seats: teams.memberCount(team.id) }
+      : null,
+    billingConfigured: billingConfigured(),
     limits: {
       // Infinity serializes to null; the dashboard reads null as "no limit".
       activeTests: plan.activeTests,
@@ -152,10 +166,22 @@ router.get('/api/me', requireUser, (req, res) => {
 // Data deletion = account deletion (GDPR minimum): removes the user and every
 // test, session, interaction, event file, and artifact they own.
 router.delete('/api/account', requireUser, async (req, res) => {
-  if (req.user.stripe_subscription_id && process.env.STRIPE_SECRET_KEY) {
+  const team = teams.teamForUser(req.user.id);
+  const subs = [req.user.stripe_subscription_id];
+  // An owner's account going away takes the team with it; a member just leaves
+  // (their team tests stay with the owner, and the seat stops being billed).
+  if (team && teams.roleFor(team.id, req.user.id) === 'owner') {
+    subs.push(team.stripe_subscription_id);
+    teams.deleteTeam(team.id);
+  } else if (team) {
+    teams.releaseMember(team.id, req.user.id);
+    await require('./billing').syncSeats(teams.teamById.get(team.id));
+  }
+  for (const sub of subs.filter(Boolean)) {
+    if (!process.env.STRIPE_SECRET_KEY) break;
     try {
       const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-      await stripe.subscriptions.cancel(req.user.stripe_subscription_id);
+      await stripe.subscriptions.cancel(sub);
     } catch (e) {
       console.error('[billing] subscription cancel on account delete failed:', e.message);
     }

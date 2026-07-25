@@ -85,8 +85,16 @@ app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, '..', 'public'
 app.use(require('./routes/auth'));
 app.use(require('./routes/github'));
 app.use(billing.router);
+app.use(require('./routes/teams'));
 app.use(require('./routes/api'));
 app.use(require('./routes/take'));
+
+// Team invite landing. Served signed-out too: the page walks the visitor
+// through signing in and then finishes the join for them.
+app.get('/join/:token', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, '..', 'public', 'join.html'));
+});
 
 // Dev-facing pages.
 app.get('/tests/:id/setup', requireUserPage, (req, res) =>

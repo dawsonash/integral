@@ -5,30 +5,50 @@
 const fs = require('fs');
 const path = require('path');
 const { db, EVENTS_DIR, ARTIFACTS_DIR } = require('../db');
-const { PLANS } = require('./plans');
+const { PLANS, teamPlan } = require('./plans');
+const { memberCount } = require('./teams');
 const { deleteSessionRows } = require('./purge');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// One group per allowance pool, because retention is a property of the plan
+// paying for the data. A team's tests are swept under the team's plan even
+// though each row still records the individual who made it; personal tests are
+// swept under their owner's plan; ownerless (pre-auth) rows get free tier.
+function retentionGroups() {
+  const groups = [];
+  for (const team of db.prepare('SELECT id, plan FROM teams').all()) {
+    groups.push({
+      plan: team.plan === 'team' ? teamPlan(memberCount(team.id)) : PLANS.free,
+      cond: (a) => `${a}team_id = ?`,
+      args: [team.id],
+    });
+  }
+  // Anyone not in a team: their rows are the ones with no team_id.
+  for (const u of db.prepare('SELECT id, plan FROM users WHERE id NOT IN (SELECT user_id FROM team_members)').all()) {
+    groups.push({
+      plan: PLANS[u.plan] || PLANS.free,
+      cond: (a) => `${a}user_id = ? AND ${a}team_id IS NULL`,
+      args: [u.id],
+    });
+  }
+  groups.push({ plan: PLANS.free, cond: (a) => `${a}user_id IS NULL`, args: [] });
+  return groups;
+}
+
 function sweep(now = Date.now()) {
   const out = { expiredTests: 0, deletedSessions: 0, orphanEventFiles: 0, orphanArtifactDirs: 0 };
 
-  // Ownerless tests (pre-auth rows) get free-tier treatment.
-  const groups = db
-    .prepare('SELECT id AS user_id, plan FROM users UNION ALL SELECT NULL, \'free\'')
-    .all();
-
-  for (const g of groups) {
-    const plan = PLANS[g.plan] || PLANS.free;
-    const ownerCond = g.user_id === null ? 'user_id IS NULL' : 'user_id = ?';
-    const ownerArgs = g.user_id === null ? [] : [g.user_id];
+  for (const g of retentionGroups()) {
+    const plan = g.plan;
+    const ownerArgs = g.args;
 
     // Free links die linkTtlDays after launch (abuse friction + retention lever).
     if (plan.linkTtlDays) {
       out.expiredTests += db
         .prepare(
           `UPDATE tests SET status = 'closed'
-           WHERE ${ownerCond} AND status = 'live' AND launched_at IS NOT NULL AND launched_at < ?`
+           WHERE ${g.cond('')} AND status = 'live' AND launched_at IS NOT NULL AND launched_at < ?`
         )
         .run(...ownerArgs, now - plan.linkTtlDays * DAY_MS).changes;
     }
@@ -38,7 +58,7 @@ function sweep(now = Date.now()) {
       const ids = db
         .prepare(
           `SELECT s.id FROM sessions s JOIN tests t ON t.id = s.test_id
-           WHERE t.${ownerCond} AND s.started_at < ?`
+           WHERE ${g.cond('t.')} AND s.started_at < ?`
         )
         .all(...ownerArgs, now - plan.retentionDays * DAY_MS)
         .map((r) => r.id);

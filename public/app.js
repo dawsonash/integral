@@ -14,17 +14,116 @@
     var acct = document.getElementById('account');
     acct.style.display = 'flex';
     document.getElementById('whoami').textContent = me.login;
-    document.getElementById('planbadge').textContent = me.plan;
+    document.getElementById('planbadge').textContent = me.planLabel || me.plan;
     var u = me.usage, l = me.limits;
     document.getElementById('usage').textContent =
       u.responsesThisMonth + (l.responsesPerMonth ? ' / ' + l.responsesPerMonth : '') + ' responses this month';
     if (me.billingConfigured) {
       show('upgrade', me.plan === 'free');
-      show('managebilling', me.plan !== 'free');
+      // Team members don't hold the subscription — only the owner gets a
+      // billing button, since the portal would 400 for everyone else.
+      show('managebilling', me.plan !== 'free' && (!me.team || me.team.role === 'owner'));
     }
+    // On a team the pool is shared, so the list isn't "yours" any more.
+    document.getElementById('testsheading').textContent = me.team ? me.team.name + ' — tests' : 'Your tests';
+    loadTeam();
     loadRepos();
     loadTests();
   }
+
+  // ---------- team ----------
+
+  function loadTeam() {
+    if (!me.team) return show('teamcard', false);
+    fetch('/api/team').then(function (r) { return r.json(); }).then(function (j) {
+      var t = j.team;
+      if (!t) return show('teamcard', false);
+      show('teamcard', true);
+      document.getElementById('teamheading').textContent = t.name;
+      document.getElementById('teamsummary').textContent =
+        t.seats + (t.seats === 1 ? ' seat' : ' seats') + ' · ' +
+        t.limits.activeTests + ' active tests · ' + t.limits.responsesPerMonth + ' responses / month' +
+        (t.role === 'owner' && t.plan === 'team'
+          ? ' · billed ' + (t.billingInterval === 'year' ? 'yearly' : 'monthly') +
+            ', ' + t.billableSeats + ' paid seat' + (t.billableSeats === 1 ? '' : 's') + ' beyond yours'
+          : '');
+
+      var tbody = document.querySelector('#teammembers tbody');
+      tbody.innerHTML = '';
+      t.members.forEach(function (m) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="js-login"></td><td class="muted">' + m.role + '</td>' +
+          '<td class="muted">' + fmtDate(m.joined_at) + '</td><td class="js-act"></td>';
+        tr.querySelector('.js-login').textContent = m.login + (m.id === me.id ? ' (you)' : '');
+        if (t.role === 'owner' && m.role !== 'owner') {
+          var b = document.createElement('button');
+          b.className = 'btn-sm';
+          b.textContent = 'Remove';
+          b.onclick = function () {
+            if (!confirm('Remove ' + m.login + ' from the team? Their tests stay with the team, and the seat stops being billed.')) return;
+            fetch('/api/team/members/' + m.id, { method: 'DELETE' }).then(function () { location.reload(); });
+          };
+          tr.querySelector('.js-act').appendChild(b);
+        }
+        tbody.appendChild(tr);
+      });
+
+      show('teamowner', t.role === 'owner');
+      show('deleteteam', t.role === 'owner');
+      show('leaveteam', t.role !== 'owner');
+
+      var itable = document.getElementById('teaminvites');
+      var ibody = itable.querySelector('tbody');
+      ibody.innerHTML = '';
+      itable.style.display = t.invites.length ? '' : 'none';
+      t.invites.forEach(function (inv) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td class="js-who"></td><td><input class="js-url" readonly style="width:100%"></td><td class="js-act"></td>';
+        tr.querySelector('.js-who').textContent = inv.invitee;
+        tr.querySelector('.js-url').value = inv.url;
+        var b = document.createElement('button');
+        b.className = 'btn-sm';
+        b.textContent = 'Revoke';
+        b.onclick = function () {
+          fetch('/api/team/invites/' + inv.id, { method: 'DELETE' }).then(function () { loadTeam(); });
+        };
+        tr.querySelector('.js-act').appendChild(b);
+        ibody.appendChild(tr);
+      });
+    });
+  }
+
+  document.getElementById('invite').onclick = function () {
+    var el = document.getElementById('invitee');
+    var msgEl = document.getElementById('invitemsg');
+    if (!el.value.trim()) return (msgEl.textContent = 'Enter a GitHub username or email address.');
+    msgEl.textContent = 'Inviting…';
+    fetch('/api/team/invites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invitee: el.value.trim() }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) return (msgEl.textContent = res.j.message || 'Invite failed.');
+        el.value = '';
+        msgEl.textContent = 'Invite created — send them the link below.';
+        loadTeam();
+      });
+  };
+
+  document.getElementById('leaveteam').onclick = function (e) {
+    e.preventDefault();
+    if (!confirm('Leave this team? Tests you created inside it stay with the team.')) return;
+    fetch('/api/team/members/' + me.id, { method: 'DELETE' }).then(function () { location.reload(); });
+  };
+
+  document.getElementById('deleteteam').onclick = function (e) {
+    e.preventDefault();
+    if (!confirm('Delete this team? The subscription is cancelled and every test reverts to your personal account.')) return;
+    fetch('/api/team', { method: 'DELETE' }).then(function () { location.reload(); });
+  };
 
   // ---------- repo picker ----------
 
@@ -135,15 +234,76 @@
 
   // ---------- billing ----------
 
-  function billingRedirect(path) {
-    fetch(path, { method: 'POST' })
+  function billingRedirect(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j.url) location.href = j.url;
-        else alert(j.message || 'Billing is not available right now.');
+        else document.getElementById('plansmsg').textContent = j.message || 'Billing is not available right now.';
       });
   }
-  document.getElementById('upgrade').onclick = function () { billingRedirect('/api/billing/checkout'); };
+
+  // Monthly/yearly, mirroring the landing page's toggle. Yearly is exactly 10%
+  // off, displayed as the equivalent monthly figure with the real annual
+  // amount in the note underneath.
+  var RATES = {
+    month: {
+      individual: '20', team: '20', seat: '10',
+      notes: { individual: 'Billed monthly.', team: 'Billed monthly. Base includes your seat.' },
+    },
+    year: {
+      individual: '18', team: '18', seat: '9',
+      notes: {
+        individual: '$216 billed yearly.',
+        team: '$216 + $108 per teammate, billed yearly. Base includes your seat.',
+      },
+    },
+  };
+  var interval = 'month';
+  try { interval = localStorage.getItem('integral_billing_interval') === 'year' ? 'year' : 'month'; } catch (e) {}
+
+  function renderPrices() {
+    var r = RATES[interval];
+    document.querySelectorAll('#plans [data-price]').forEach(function (el) {
+      el.textContent = r[el.getAttribute('data-price')];
+    });
+    document.querySelectorAll('#plans [data-note]').forEach(function (el) {
+      el.textContent = r.notes[el.getAttribute('data-note')];
+    });
+    document.querySelectorAll('#interval button').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.interval === interval);
+    });
+  }
+
+  document.querySelectorAll('#interval button').forEach(function (b) {
+    b.onclick = function () {
+      interval = b.dataset.interval;
+      try { localStorage.setItem('integral_billing_interval', interval); } catch (e) {}
+      renderPrices();
+    };
+  });
+
+  document.querySelectorAll('#plans [data-buy]').forEach(function (b) {
+    b.onclick = function () {
+      var plan = b.dataset.buy;
+      document.getElementById('plansmsg').textContent = 'Opening checkout…';
+      billingRedirect('/api/billing/checkout', {
+        plan: plan,
+        interval: interval,
+        teamName: document.getElementById('teamname').value,
+      });
+    };
+  });
+
+  document.getElementById('upgrade').onclick = function () {
+    renderPrices();
+    show('plans', true);
+    document.getElementById('plans').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   document.getElementById('managebilling').onclick = function () { billingRedirect('/api/billing/portal'); };
 
   // ---------- create test ----------
@@ -208,15 +368,21 @@
       var tbody = document.querySelector('#tests tbody');
       tbody.innerHTML = '';
       show('empty', !tests.length);
+      // "Created by" only earns its column when more than one person can
+      // appear in it.
+      var showAuthor = !!me.team;
+      document.querySelector('#tests .col-author').style.display = showAuthor ? '' : 'none';
       tests.forEach(function (t) {
         var tr = document.createElement('tr');
         tr.innerHTML =
           '<td><a href="/tests/' + t.id + '/setup"></a></td>' +
+          (showAuthor ? '<td class="muted js-author"></td>' : '') +
           '<td><span class="badge ' + t.status + '">' + t.status + '</span></td>' +
           '<td>' + t.completed_count + ' / ' + t.response_cap + '</td>' +
           '<td class="muted">' + fmtDate(t.created_at) + '</td>' +
           '<td><a class="btn btn-sm" href="/tests/' + t.id + '/results">Results</a></td>';
         tr.querySelector('a').textContent = t.name;
+        if (showAuthor) tr.querySelector('.js-author').textContent = t.author || '—';
         tbody.appendChild(tr);
       });
     });
@@ -224,9 +390,26 @@
 
   // ---------- boot ----------
 
-  fetch('/api/me').then(function (r) {
-    // Session expired: back to the front door, which serves the landing page.
-    if (r.status === 401) return location.replace('/');
-    return r.json().then(function (j) { me = j; showApp(); });
+  // Someone who followed an invite link while signed out was sent through
+  // GitHub, which always lands back here. Finish the join they started.
+  function pendingJoin() {
+    var token = null;
+    try {
+      token = localStorage.getItem('integral_pending_join');
+      localStorage.removeItem('integral_pending_join');
+    } catch (e) {}
+    if (!token) return Promise.resolve();
+    return fetch('/api/team/join/' + token, { method: 'POST' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) { if (!res.ok) alert(res.j.message || 'That invite could not be accepted.'); })
+      .catch(function () {});
+  }
+
+  pendingJoin().then(function () {
+    fetch('/api/me').then(function (r) {
+      // Session expired: back to the front door, which serves the landing page.
+      if (r.status === 401) return location.replace('/');
+      return r.json().then(function (j) { me = j; showApp(); });
+    });
   });
 })();

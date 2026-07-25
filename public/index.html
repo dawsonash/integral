@@ -22,6 +22,62 @@
 </div>
 
 <div class="container" id="main" style="display:none">
+  <!-- Plan chooser, opened by the Upgrade button. Prices here must match the
+       Stripe prices behind STRIPE_PRICE_* (see docs/go-to-market.md). -->
+  <div class="card" id="plans" style="display:none">
+    <h2>Choose a plan</h2>
+    <div class="tabs" id="interval" style="margin-top:6px">
+      <button data-interval="month" class="active">Monthly</button>
+      <button data-interval="year">Yearly — save 10%</button>
+    </div>
+    <div class="plangrid">
+      <div class="card plan">
+        <h3>Individual</h3>
+        <div class="planprice">$<span data-price="individual">20</span> <span class="muted">/ month</span></div>
+        <p class="muted" data-note="individual">Billed monthly.</p>
+        <p class="muted">10 active tests · 500 responses / month · 1-year retention.</p>
+        <button class="btn-primary" data-buy="individual">Upgrade →</button>
+      </div>
+      <div class="card plan">
+        <h3>Team</h3>
+        <div class="planprice">
+          $<span data-price="team">20</span> <span class="muted">/ month</span>
+          <span class="muted">+ $<span data-price="seat">10</span> / teammate</span>
+        </div>
+        <p class="muted" data-note="team">Billed monthly. Base includes your seat.</p>
+        <p class="muted">Shared workspace. Every seat adds 10 active tests and 500 responses / month.</p>
+        <label>Team name</label>
+        <input type="text" id="teamname" placeholder="e.g. Platform team">
+        <button class="btn-primary" data-buy="team">Start a team →</button>
+      </div>
+    </div>
+    <p class="muted" id="plansmsg"></p>
+  </div>
+
+  <!-- Team roster. Only rendered for members; owners additionally get invites. -->
+  <div class="card" id="teamcard" style="display:none">
+    <h2 id="teamheading">Team</h2>
+    <p class="muted" id="teamsummary"></p>
+    <table id="teammembers"><thead><tr>
+      <th>Member</th><th>Role</th><th>Joined</th><th></th>
+    </tr></thead><tbody></tbody></table>
+    <div id="teamowner" style="display:none">
+      <label>Invite a teammate <span class="muted">(GitHub username or email — each one adds a seat to your bill)</span></label>
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <input type="text" id="invitee" placeholder="octocat" style="flex:1">
+        <button class="btn" id="invite">Invite</button>
+      </div>
+      <p class="muted" id="invitemsg"></p>
+      <table id="teaminvites" style="display:none"><thead><tr>
+        <th>Pending invite</th><th>Link</th><th></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <p class="muted">
+      <a href="#" id="leaveteam">Leave team</a> ·
+      <a href="#" id="deleteteam" style="display:none">Delete team</a>
+    </p>
+  </div>
+
   <div class="card">
     <h1>New test</h1>
     <label>Test name</label>
@@ -72,9 +128,10 @@
   </div>
 
   <div class="card">
-    <h2>Your tests</h2>
+    <h2 id="testsheading">Your tests</h2>
     <table id="tests"><thead><tr>
-      <th>Name</th><th>Status</th><th>Responses</th><th>Created</th><th></th>
+      <th>Name</th><th class="col-author" style="display:none">Created by</th>
+      <th>Status</th><th>Responses</th><th>Created</th><th></th>
     </tr></thead><tbody></tbody></table>
     <div id="empty" style="display:none">
       <p class="muted">No tests yet. Fastest first run: try the bundled sample — a small

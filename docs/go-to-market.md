@@ -68,15 +68,32 @@ code, the market reason, and the lean implementation.
   - **Stripe Checkout + Stripe Customer Portal.** Zero custom billing UI: Checkout
     handles cards/tax/receipts, the Portal handles upgrades, cancellations, and card
     updates. The only code you write is one webhook handler that flips a
-    `users.plan` column.
-  - **One paid plan.** Free + one $29/mo tier (midpoint of spec §8's $19–39 band).
-    A single price point is easier to reason about, easier to A/B later, and avoids
-    building plan-comparison UI.
-  - **Gate on the axes the spec already chose** (§8: volume + retention + seats —
-    seats deferred): free = e.g. 1 active test, 25 responses/mo, 14-day retention;
-    paid = e.g. 10 active tests, 500 responses/mo, 1-year retention. The enforcement
-    points already exist in code: `response_cap` in `tests`, test `status`, and the
-    session-ingest path in `routes/take.js`.
+    `users.plan` column (and `teams.plan` for team subscriptions).
+  - **Two paid plans, two billing periods.** Shipped pricing:
+
+    | Plan | Monthly | Yearly (10% off) | Stripe env var |
+    | --- | --- | --- | --- |
+    | Free | $0 | — | — |
+    | Individual | $20/mo | $216/yr ($18/mo) | `STRIPE_PRICE_INDIVIDUAL_{MONTHLY,YEARLY}` |
+    | Team — base | $20/mo | $216/yr ($18/mo) | `STRIPE_PRICE_TEAM_{MONTHLY,YEARLY}` |
+    | Team — per seat | $10/mo | $108/yr ($9/mo) | `STRIPE_PRICE_TEAM_SEAT_{MONTHLY,YEARLY}` |
+
+    The Team base covers the workspace plus the owner's seat; the per-seat line
+    item's quantity tracks teammates beyond the owner and is pushed to Stripe by
+    `syncSeats()` on every roster change (`TEAM_INCLUDED_SEATS` in
+    `server/lib/teams.js` is the knob if the owner should become billable too).
+    A team subscription therefore has two line items; an individual one has one.
+    The displayed numbers are hardcoded in `public/landing.html` and
+    `public/app.js` — they must match the Stripe prices.
+  - **`pro` is the legacy $29/mo tier.** Existing subscribers keep the key and the
+    same entitlements as Individual; nothing migrates them automatically.
+  - **Gate on the axes the spec already chose** (§8: volume + retention + seats):
+    free = 1 active test, 25 responses/mo, 14-day retention; Individual = 10 active
+    tests, 500 responses/mo, 1-year retention; Team pools those paid limits and
+    multiplies them by headcount, so limits grow with what the team pays. The
+    enforcement points already exist in code: `response_cap` in `tests`, test
+    `status`, and the session-ingest path in `routes/take.js` — all now scoped
+    through `scopeFor()` in `server/lib/plans.js` so a team shares one pool.
   - Free tier stays generous enough to reach the "aha" (run one real test, watch one
     real replay) — spec §8's conversion logic.
 

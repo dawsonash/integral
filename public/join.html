@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join a team — Integral</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
+</div>
+
+<div class="container">
+  <div class="card">
+    <h1>Team invite</h1>
+    <p class="muted" id="status">Checking your invite…</p>
+    <div id="actions" style="display:none;margin-top:14px">
+      <button class="btn-primary" id="accept" style="display:none">Join the team →</button>
+      <a class="btn btn-primary" id="signin" href="/auth/github" style="display:none">Sign in with GitHub →</a>
+      <a class="btn" href="/">Back to Integral</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// The invite token lives in the URL. Accepting needs a session, so a signed-out
+// visitor is parked in localStorage and picked back up by the dashboard once
+// GitHub sends them home (see pendingJoin in app.js).
+(function () {
+  var token = location.pathname.split('/').pop();
+  var status = document.getElementById('status');
+  var actions = document.getElementById('actions');
+
+  function show(id, on) { document.getElementById(id).style.display = on ? '' : 'none'; }
+
+  document.getElementById('accept').onclick = function () {
+    status.textContent = 'Joining…';
+    fetch('/api/team/join/' + token, { method: 'POST' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          status.textContent = res.j.message || 'That invite could not be accepted.';
+          show('accept', false);
+          return;
+        }
+        location.href = '/';
+      });
+  };
+
+  fetch('/api/me').then(function (r) {
+    actions.style.display = '';
+    if (r.status === 401) {
+      try { localStorage.setItem('integral_pending_join', token); } catch (e) {}
+      status.textContent = 'Sign in to accept this invite. We’ll finish joining you to the team right after.';
+      show('signin', true);
+      // Dev-mode servers have no GitHub app; point at the dev login instead.
+      fetch('/api/auth/config').then(function (x) { return x.json(); }).then(function (c) {
+        if (!c.github && c.dev) {
+          var a = document.getElementById('signin');
+          a.href = '/auth/dev';
+          a.textContent = 'Continue in dev mode →';
+        }
+      });
+      return;
+    }
+    return r.json().then(function (me) {
+      if (me.team) {
+        status.textContent = 'You are already on the team "' + me.team.name + '". Leave it before joining another.';
+        return;
+      }
+      status.textContent = 'Signed in as ' + me.login + '. Accept the invite to join the shared workspace.';
+      show('accept', true);
+    });
+  });
+})();
+</script>
+</body>
+</html>

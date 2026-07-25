@@ -36,6 +36,11 @@ function deleteTestData(testId) {
 function deleteUserData(userId) {
   const testIds = db.prepare('SELECT id FROM tests WHERE user_id = ?').all(userId).map((r) => r.id);
   for (const id of testIds) deleteTestData(id);
+  // Team rows the account leaves behind. Callers (routes/auth.js) already
+  // settled the roster — dropping the team or releasing the seat — so this is
+  // just making sure nothing dangles.
+  db.prepare('DELETE FROM team_members WHERE user_id = ?').run(userId);
+  db.prepare('UPDATE team_invites SET invited_by = NULL WHERE invited_by = ?').run(userId);
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 }
 

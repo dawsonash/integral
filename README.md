@@ -84,10 +84,16 @@ database. Needs a local Postgres (`INTEGRAL_SANDBOX_PG_URL`, default
 - **Auth** — GitHub OAuth (dev-mode login locally); signed session cookie, no
   external session store. Only the dev-facing surface is gated; the testee flow
   stays anonymous.
-- **Plans + billing** — free vs Pro ($29/mo) via Stripe Checkout + Customer
-  Portal; one webhook flips `users.plan`. Gates: concurrent live tests,
-  responses/month, retention window, artifact size, link TTL
+- **Plans + billing** — Free, Individual ($20/mo, $216/yr), and Team ($20/mo +
+  $10 per teammate; $216/yr + $108/teammate) via Stripe Checkout + Customer
+  Portal. The webhook flips `users.plan` or `teams.plan`. Gates: concurrent live
+  tests, responses/month, retention window, artifact size, link TTL
   (`server/lib/plans.js`).
+- **Teams** — a shared workspace: members see and manage the same tests,
+  results, and replays, and the paid limits are pooled and scale per seat. The
+  roster (`server/lib/teams.js`) drives the per-seat quantity on the team's
+  Stripe subscription. One team per user; joining moves a member's existing
+  tests in, leaving hands them to the owner.
 - **Origin split** — set `INTEGRAL_RUN_HOST` and hosted artifacts + the take
   flow live on a separate domain that never sees dashboard cookies, so uploaded
   scripts can't touch the dev surface (artifact and recorder still share an

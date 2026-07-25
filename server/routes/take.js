@@ -9,7 +9,7 @@ const { isServerTest } = require('../lib/sandbox/classify');
 const sandboxes = require('../lib/sandbox/registry');
 const { proxyRequest, sandboxErrorPage } = require('../lib/sandbox/proxy');
 const { signalsFor } = require('../lib/signals');
-const { planFor, monthStart } = require('../lib/plans');
+const { planFor, scopeFor, monthStart } = require('../lib/plans');
 const { sendEmail } = require('../lib/email');
 const { sessionLimiter, ingestLimiter, reportLimiter } = require('../lib/ratelimit');
 
@@ -131,10 +131,18 @@ router.get('/api/take/:testId/config', testOr404, (req, res) => {
 // Owner's plan gates the testee surface indirectly: total completed responses
 // across all their tests this month. Ownerless (pre-auth) tests skip the gate.
 const getOwner = db.prepare('SELECT * FROM users WHERE id = ?');
-const ownerMonthlyResponses = db.prepare(
-  `SELECT COUNT(*) AS n FROM sessions s JOIN tests t ON t.id = s.test_id
-   WHERE t.user_id = ? AND s.status = 'completed' AND s.started_at >= ?`
-);
+
+// Counted over the owner's whole allowance pool — for a team member that's
+// every test the team owns, since the monthly cap is shared.
+function monthlyResponses(owner) {
+  const scope = scopeFor(owner);
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sessions s JOIN tests t ON t.id = s.test_id
+       WHERE ${scope.where} AND s.status = 'completed' AND s.started_at >= ?`
+    )
+    .get(...scope.args, monthStart()).n;
+}
 
 router.post('/api/take/:testId/sessions', sessionLimiter, testOr404, (req, res) => {
   const t = req.test;
@@ -144,7 +152,7 @@ router.post('/api/take/:testId/sessions', sessionLimiter, testOr404, (req, res) 
     return res.status(409).json({ error: 'closed' });
   }
   const owner = t.user_id ? getOwner.get(t.user_id) : null;
-  if (owner && ownerMonthlyResponses.get(owner.id, monthStart()).n >= planFor(owner).responsesPerMonth) {
+  if (owner && monthlyResponses(owner) >= planFor(owner).responsesPerMonth) {
     return res.status(409).json({ error: 'closed' });
   }
   const fp = fingerprint(req);

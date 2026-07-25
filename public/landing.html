@@ -33,62 +33,121 @@
     <p class="muted">Free plan · no credit card · first test live in ~2 minutes</p>
   </div>
   <div class="hero-visual" aria-hidden="true">
-    <svg viewBox="0 0 520 360" role="img" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <radialGradient id="heat-hot" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="#dc2626" stop-opacity="0.85"/>
-          <stop offset="45%" stop-color="#f59e0b" stop-opacity="0.55"/>
-          <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
-        </radialGradient>
-        <radialGradient id="heat-warm" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
-          <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
-        </radialGradient>
-        <radialGradient id="heat-cool" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.4"/>
-          <stop offset="100%" stop-color="#4f46e5" stop-opacity="0"/>
-        </radialGradient>
-      </defs>
-      <!-- browser frame -->
-      <rect x="1" y="1" width="518" height="358" rx="12" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
-      <!-- title bar -->
-      <rect x="2" y="2" width="516" height="38" rx="11" fill="#f7f7f8"/>
-      <rect x="2" y="28" width="516" height="12" fill="#f7f7f8"/>
-      <circle cx="24" cy="21" r="5" fill="#fca5a5"/>
-      <circle cx="42" cy="21" r="5" fill="#fcd34d"/>
-      <circle cx="60" cy="21" r="5" fill="#86efac"/>
-      <rect x="84" y="11" width="280" height="20" rx="10" fill="#ffffff" stroke="#e5e7eb"/>
-      <text x="98" y="25" font-family="ui-monospace, monospace" font-size="11" fill="#6b7280">run.integral.app/t/3f9c</text>
-      <!-- mock artifact page -->
-      <rect x="24" y="58" width="200" height="16" rx="4" fill="#e5e7eb"/>
-      <rect x="24" y="86" width="300" height="9" rx="4" fill="#eef0f2"/>
-      <rect x="24" y="102" width="260" height="9" rx="4" fill="#eef0f2"/>
-      <rect x="24" y="132" width="224" height="120" rx="8" fill="#f3f4f6"/>
-      <rect x="40" y="148" width="120" height="10" rx="4" fill="#dfe2e6"/>
-      <rect x="40" y="168" width="180" height="8" rx="4" fill="#e8eaed"/>
-      <rect x="40" y="184" width="150" height="8" rx="4" fill="#e8eaed"/>
-      <rect x="40" y="216" width="96" height="24" rx="6" fill="#4f46e5"/>
-      <rect x="272" y="132" width="224" height="120" rx="8" fill="#f3f4f6"/>
-      <rect x="288" y="148" width="120" height="10" rx="4" fill="#dfe2e6"/>
-      <rect x="288" y="168" width="180" height="8" rx="4" fill="#e8eaed"/>
-      <rect x="288" y="184" width="150" height="8" rx="4" fill="#e8eaed"/>
-      <rect x="288" y="216" width="96" height="24" rx="6" fill="#ffffff" stroke="#d3d6db"/>
-      <!-- click heatmap -->
-      <circle cx="90" cy="228" r="52" fill="url(#heat-hot)"/>
-      <circle cx="122" cy="220" r="34" fill="url(#heat-warm)"/>
-      <circle cx="336" cy="228" r="30" fill="url(#heat-cool)"/>
-      <circle cx="180" cy="92" r="26" fill="url(#heat-cool)"/>
-      <!-- replay timeline -->
-      <rect x="24" y="288" width="472" height="48" rx="8" fill="#1a1a2e"/>
-      <path d="M46 302 L46 322 L62 312 Z" fill="#ffffff"/>
-      <rect x="78" y="309" width="380" height="6" rx="3" fill="#3a3a55"/>
-      <rect x="78" y="309" width="238" height="6" rx="3" fill="#4f46e5"/>
-      <circle cx="316" cy="312" r="7" fill="#ffffff"/>
-      <rect x="150" y="304" width="2" height="16" fill="#16a34a"/>
-      <rect x="236" y="304" width="2" height="16" fill="#16a34a"/>
-      <rect x="290" y="304" width="2" height="16" fill="#f59e0b"/>
-      <text x="470" y="317" font-family="ui-monospace, monospace" font-size="11" fill="#9ca3af" text-anchor="end">1:24</text>
-    </svg>
+    <div class="card-stack" id="cardStack">
+
+      <article class="stack-card" data-card="heatmap">
+        <div class="stack-chrome">
+          <span class="stack-dot dot-red"></span>
+          <span class="stack-dot dot-yellow"></span>
+          <span class="stack-dot dot-green"></span>
+          <span class="stack-url">run.integral.app/t/3f9c</span>
+          <span class="stack-badge badge-heatmap">Heatmaps</span>
+        </div>
+        <div class="stack-body">
+          <div class="skel skel-title"></div>
+          <div class="skel skel-line w-80"></div>
+          <div class="skel skel-line w-65"></div>
+          <div class="stack-panels">
+            <div class="stack-panel">
+              <div class="heat-glow heat-hot"></div>
+              <div class="heat-glow heat-warm"></div>
+              <div class="skel skel-line w-55"></div>
+              <div class="skel skel-line w-75"></div>
+              <div class="skel skel-line w-60"></div>
+              <div class="skel skel-btn accent"></div>
+            </div>
+            <div class="stack-panel">
+              <div class="heat-glow heat-cool"></div>
+              <div class="skel skel-line w-55"></div>
+              <div class="skel skel-line w-75"></div>
+              <div class="skel skel-line w-60"></div>
+              <div class="skel skel-btn outline"></div>
+            </div>
+          </div>
+          <div class="stack-player">
+            <span class="player-play">&#9654;</span>
+            <div class="player-track">
+              <div class="player-fill"></div>
+              <span class="player-tick" style="left:38%"></span>
+              <span class="player-tick" style="left:62%"></span>
+              <span class="player-tick tick-warn" style="left:78%"></span>
+              <span class="player-thumb" style="left:58%"></span>
+            </div>
+            <span class="player-time">1:24</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="stack-card" data-card="replay">
+        <div class="stack-chrome">
+          <span class="stack-dot dot-red"></span>
+          <span class="stack-dot dot-yellow"></span>
+          <span class="stack-dot dot-green"></span>
+          <span class="stack-url">run.integral.app/t/7a1e</span>
+          <span class="stack-badge badge-replay">Session replays</span>
+        </div>
+        <div class="stack-body">
+          <span class="rec-pill"><span class="rec-dot"></span>REC</span>
+          <div class="skel skel-title"></div>
+          <div class="skel skel-line w-80"></div>
+          <div class="replay-stage">
+            <div class="skel skel-block"></div>
+            <div class="skel skel-block small"></div>
+            <svg class="replay-path" viewBox="0 0 460 190" preserveAspectRatio="none">
+              <path d="M20 24 C 120 10, 160 90, 240 70 S 380 150, 430 40"/>
+              <circle class="replay-stop" cx="120" cy="34" r="4"/>
+              <circle class="replay-stop" cx="240" cy="70" r="4"/>
+              <circle class="replay-stop" cx="360" cy="128" r="4"/>
+              <g class="replay-cursor" transform="translate(430 40)">
+                <path d="M0 0 L0 14 L4 10.5 L7 16 L9.5 14.5 L6.5 9 L11 9 Z"/>
+              </g>
+            </svg>
+          </div>
+          <div class="stack-player">
+            <span class="player-play">&#9654;</span>
+            <div class="player-track">
+              <div class="player-fill replay-fill"></div>
+              <span class="player-thumb" style="left:41%"></span>
+            </div>
+            <span class="player-time">0:47</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="stack-card" data-card="graph">
+        <div class="stack-chrome">
+          <span class="stack-dot dot-red"></span>
+          <span class="stack-dot dot-yellow"></span>
+          <span class="stack-dot dot-green"></span>
+          <span class="stack-url">run.integral.app/t/9c1d</span>
+          <span class="stack-badge badge-graph">Insights</span>
+        </div>
+        <div class="stack-body">
+          <div class="skel skel-title"></div>
+          <div class="skel skel-line w-70"></div>
+          <div class="chart-stage">
+            <svg class="chart-trend" viewBox="0 0 460 150" preserveAspectRatio="none">
+              <path d="M10 110 C 80 90, 120 40, 190 60 S 300 20, 360 50 S 430 30, 450 15"/>
+            </svg>
+            <div class="chart-bars">
+              <span style="height:38%"></span>
+              <span style="height:62%"></span>
+              <span style="height:45%"></span>
+              <span style="height:80%"></span>
+              <span style="height:54%"></span>
+              <span style="height:70%"></span>
+              <span style="height:33%"></span>
+            </div>
+          </div>
+          <div class="stack-stats">
+            <div class="stat"><span class="skel skel-num"></span><span class="skel skel-label"></span></div>
+            <div class="stat"><span class="skel skel-num"></span><span class="skel skel-label"></span></div>
+            <div class="stat"><span class="skel skel-num"></span><span class="skel skel-label"></span></div>
+          </div>
+        </div>
+      </article>
+
+    </div>
   </div>
 </header>
 
@@ -146,11 +205,22 @@
 <section id="pricing" class="lsection">
   <h2>Pricing</h2>
   <p class="lsub muted">Start free. Upgrade when a test outgrows the limits.</p>
-  <!-- Pro price must match the Stripe price behind STRIPE_PRICE_ID (see docs/go-to-market.md). -->
+
+  <!-- Displayed prices must match the Stripe prices behind the
+       STRIPE_PRICE_* ids (see docs/go-to-market.md). Yearly is exactly 10%
+       off: $20 → $216/yr, $10/seat → $108/seat/yr. -->
+  <div class="billing-toggle" role="group" aria-label="Billing period">
+    <button type="button" class="bt-opt is-on" id="bt-month" aria-pressed="true">Monthly</button>
+    <button type="button" class="bt-opt" id="bt-year" aria-pressed="false">
+      Yearly <span class="bt-save">save 10%</span>
+    </button>
+  </div>
+
   <div class="lgrid pricing">
     <div class="card price-card">
       <h3>Free</h3>
       <div class="price">$0<span class="muted"> / month</span></div>
+      <p class="price-note muted">No credit card.</p>
       <ul>
         <li>1 active test</li>
         <li>25 responses / month</li>
@@ -160,10 +230,14 @@
       </ul>
       <a class="btn js-signin" href="/auth/github">Start free</a>
     </div>
+
     <div class="card price-card featured">
       <span class="badge">Most popular</span>
-      <h3>Pro</h3>
-      <div class="price">$29<span class="muted"> / month</span></div>
+      <h3>Individual</h3>
+      <div class="price">
+        $<span data-price="individual">20</span><span class="muted"> / month</span>
+      </div>
+      <p class="price-note muted" data-note="individual">Billed monthly.</p>
       <ul>
         <li>10 active tests</li>
         <li>500 responses / month</li>
@@ -172,6 +246,23 @@
         <li>Test links never expire</li>
       </ul>
       <a class="btn btn-primary js-signin" href="/auth/github">Get started</a>
+    </div>
+
+    <div class="card price-card">
+      <h3>Team</h3>
+      <div class="price">
+        $<span data-price="team">20</span><span class="muted"> / month</span>
+        <span class="price-plus">+ $<span data-price="seat">10</span> / teammate</span>
+      </div>
+      <p class="price-note muted" data-note="team">Billed monthly. Base includes the owner's seat.</p>
+      <ul>
+        <li>Shared workspace — everyone sees every test</li>
+        <li>Results, heatmaps, and replays shared</li>
+        <li>10 active tests <em>per seat</em></li>
+        <li>500 responses / month <em>per seat</em></li>
+        <li>1-year retention · 50 MB artifacts</li>
+      </ul>
+      <a class="btn js-signin" href="/auth/github">Start a team</a>
     </div>
   </div>
 </section>
@@ -195,6 +286,102 @@
       if (/GitHub/.test(a.textContent)) a.textContent = 'Continue in dev mode';
     });
   });
+})();
+
+// Monthly/yearly pricing toggle. Yearly is exactly 10% off, shown as the
+// equivalent per-month figure so the two columns compare directly; the note
+// under each price carries the real annual amount that gets charged.
+(function () {
+  var monthBtn = document.getElementById('bt-month');
+  var yearBtn = document.getElementById('bt-year');
+  if (!monthBtn || !yearBtn) return;
+
+  var RATES = {
+    month: {
+      individual: '20', team: '20', seat: '10',
+      notes: {
+        individual: 'Billed monthly.',
+        team: "Billed monthly. Base includes the owner's seat.",
+      },
+    },
+    year: {
+      individual: '18', team: '18', seat: '9',
+      notes: {
+        individual: '$216 billed yearly.',
+        team: "$216 + $108 per teammate, billed yearly. Base includes the owner's seat.",
+      },
+    },
+  };
+
+  function render(period) {
+    var r = RATES[period];
+    document.querySelectorAll('[data-price]').forEach(function (el) {
+      el.textContent = r[el.getAttribute('data-price')];
+    });
+    document.querySelectorAll('[data-note]').forEach(function (el) {
+      el.textContent = r.notes[el.getAttribute('data-note')];
+    });
+    monthBtn.classList.toggle('is-on', period === 'month');
+    yearBtn.classList.toggle('is-on', period === 'year');
+    monthBtn.setAttribute('aria-pressed', String(period === 'month'));
+    yearBtn.setAttribute('aria-pressed', String(period === 'year'));
+    // Carried into the dashboard so the upgrade button checks out on the
+    // period the visitor was actually looking at.
+    try { localStorage.setItem('integral_billing_interval', period); } catch (e) {}
+  }
+
+  monthBtn.onclick = function () { render('month'); };
+  yearBtn.onclick = function () { render('year'); };
+})();
+
+// Hero card stack: shuffles the top card to the back on a timer, arcing it
+// off-screen and back in. Pauses on hover/focus and skips entirely when the
+// visitor prefers reduced motion.
+(function () {
+  var stack = document.getElementById('cardStack');
+  if (!stack) return;
+  var order = Array.prototype.slice.call(stack.children);
+  var depths = ['depth-0', 'depth-1', 'depth-2'];
+
+  function paint() {
+    order.forEach(function (card, i) {
+      card.classList.remove('depth-0', 'depth-1', 'depth-2', 'depth-out');
+      card.classList.add(depths[i]);
+    });
+  }
+  paint();
+
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var timer = null;
+  var flying = false;
+
+  function shuffle() {
+    if (flying) return;
+    flying = true;
+    var front = order[0];
+    front.classList.remove('depth-0');
+    front.classList.add('depth-out');
+    order.slice(1).forEach(function (card, i) {
+      card.classList.remove('depth-1', 'depth-2');
+      card.classList.add(depths[i]);
+    });
+    setTimeout(function () {
+      order.push(order.shift());
+      front.classList.remove('depth-out');
+      front.classList.add('depth-2');
+      flying = false;
+    }, 550);
+  }
+
+  // Only the recurring timer pauses on hover — an in-flight shuffle is left
+  // to finish so a card never gets stranded mid-flight.
+  function start() { timer = setInterval(shuffle, 3200); }
+  function stop() { clearInterval(timer); }
+  start();
+  stack.addEventListener('mouseenter', stop);
+  stack.addEventListener('mouseleave', start);
+  stack.addEventListener('click', shuffle);
 })();
 </script>
 </body>

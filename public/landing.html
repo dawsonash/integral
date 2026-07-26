@@ -151,6 +151,30 @@
   </div>
 </header>
 
+<!-- Recorded against the real product by scripts/demo-video.js — re-run it
+     when these screens change so the tour never shows a stale UI. -->
+<section id="demo" class="lsection lsection-alt">
+  <h2>The whole loop, start to finish</h2>
+  <p class="lsub muted">Upload a build, record what success looks like, share the link,
+  read the replays. No cuts, no mockups — this is the product.</p>
+  <div class="demo-frame">
+    <!-- H.264/MP4 only, deliberately. A VP9 WebM shaved ~350 KB but Chrome
+         picked it over the MP4 and then failed to decode it
+         (PIPELINE_ERROR_DECODE), which wedges the element permanently: once
+         the media pipeline errors, play() is a no-op and the tour looks dead.
+         H.264 is the one codec every target browser decodes. -->
+    <video id="demovideo" class="demo-video" poster="/demo/demo-poster.jpg"
+           width="1280" height="800" playsinline muted loop preload="none"
+           aria-label="Screen recording: creating a usability test in Integral, a tester taking it, and the results page with heatmap and session replay.">
+      <source src="/demo/demo.mp4" type="video/mp4">
+    </video>
+    <button type="button" id="demoplay" class="demo-play" aria-controls="demovideo">
+      <span class="demo-play-icon" aria-hidden="true">▶</span>
+      <span class="demo-play-label">Play the product tour</span>
+    </button>
+  </div>
+</section>
+
 <section id="features" class="lsection">
   <h2>Everything you need to watch someone actually use it</h2>
   <div class="lgrid">
@@ -286,6 +310,40 @@
       if (/GitHub/.test(a.textContent)) a.textContent = 'Continue in dev mode';
     });
   });
+})();
+
+// Demo tour. Never starts on its own — the visitor toggles it, by the button
+// or by clicking the video. preload="none" means the ~1.7 MB is not fetched
+// until they do, so the tour costs nothing to anyone who scrolls past it.
+(function () {
+  var video = document.getElementById('demovideo');
+  var button = document.getElementById('demoplay');
+  if (!video || !button) return;
+
+  var broken = false;
+
+  function sync() { button.classList.toggle('is-hidden', !video.paused); }
+  video.addEventListener('play', sync);
+  video.addEventListener('pause', sync);
+
+  // A dead media pipeline makes play() a silent no-op, so say so and offer the
+  // file directly rather than leaving a button that looks live and does nothing.
+  function fail(err) {
+    if (err && err.name === 'NotAllowedError') return; // autoplay policy; the button still works
+    broken = true;
+    button.classList.remove('is-hidden');
+    button.querySelector('.demo-play-label').textContent = 'Open the tour in a new tab';
+    if (window.console) console.warn('demo video unplayable', (video.error && video.error.message) || err);
+  }
+  video.addEventListener('error', function () { fail(); });
+
+  function toggle() {
+    if (broken) return window.open('/demo/demo.mp4', '_blank', 'noopener');
+    if (video.paused) video.play().catch(fail);
+    else video.pause();
+  }
+  button.addEventListener('click', toggle);
+  video.addEventListener('click', toggle);
 })();
 
 // Monthly/yearly pricing toggle. Yearly is exactly 10% off, shown as the

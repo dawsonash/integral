@@ -13,7 +13,14 @@ npm install
 npm start            # http://localhost:4000 — "Continue in dev mode" to sign in
 npm run seed         # optional: seed a demo test with real recorded sessions
 npm test             # API suite + real-browser E2E (needs Google Chrome installed)
+npm run demo:video   # re-record the landing page tour (needs Chrome + ffmpeg)
 ```
+
+`demo:video` drives the real product through the whole loop in a headless
+Chrome — against a throwaway data dir, so it never touches your own tests — and
+writes `public/demo/demo.mp4` plus a poster frame. Re-run it whenever the
+dashboard, setup, take, or results screens change, so the landing page never
+shows a UI that no longer exists.
 
 With nothing configured you get dev login, console email, and no billing — the
 full product loop works locally. `.env.example` documents every production knob

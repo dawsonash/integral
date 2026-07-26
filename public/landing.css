@@ -360,6 +360,52 @@
 .price-card li::before { content: '✓'; position: absolute; left: 2px; color: var(--ok); font-weight: 700; }
 .price-card .btn { text-align: center; }
 
+/* ---- Demo tour ---- */
+.demo-frame {
+  position: relative;
+  max-width: 940px;
+  margin: 0 auto;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #14142e;
+  box-shadow: 0 18px 48px rgba(20, 20, 46, 0.16);
+  line-height: 0;
+}
+.demo-video { display: block; width: 100%; height: auto; cursor: pointer; }
+/* Sits over the poster until the tour is running; clicking the video itself
+   toggles too, so this is a visual affordance more than the only control. */
+.demo-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: rgba(20, 20, 46, 0.42);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+.demo-play:hover { background: rgba(20, 20, 46, 0.5); border-color: transparent; }
+.demo-play.is-hidden { opacity: 0; visibility: hidden; }
+.demo-play-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  padding-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  font-size: 17px;
+}
+
 .lfooter {
   display: flex;
   align-items: center;

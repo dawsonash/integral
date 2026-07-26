@@ -10,7 +10,8 @@
     "test": "node --test tests/",
     "start": "node server/index.js",
     "dev": "node --env-file=.env server/index.js",
-    "seed": "node scripts/seed-demo.js"
+    "seed": "node scripts/seed-demo.js",
+    "demo:video": "node scripts/demo-video.js"
   },
   "keywords": [],
   "author": "",

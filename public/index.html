@@ -82,7 +82,7 @@
     <h1>New test</h1>
     <label>Test name</label>
     <input type="text" id="name" placeholder="e.g. Checkout flow v2">
-    <div class="tabs" style="margin-top:14px">
+    <div class="tabs" id="source" style="margin-top:14px">
       <button data-tab="repo" class="active">From repository</button>
       <button data-tab="html">Paste HTML</button>
       <button data-tab="zip">Upload zip</button>
@@ -102,7 +102,7 @@
         <select id="repo"></select>
         <label>Branch</label>
         <input type="text" id="repo_branch">
-        <label>Start page <span class="muted">(the screen testers land on — everything in its folder is hosted with it; React entries like src/main.jsx and Ink terminal apps like source/cli.tsx work unbuilt)</span></label>
+        <label>Start page</label>
         <select id="repo_entry"></select>
         <p class="muted" id="repo_entry_msg" style="display:none"></p>
         <iframe id="repo_preview" title="Page preview"
@@ -140,11 +140,16 @@
     </div>
   </div>
 
-  <p class="muted" style="text-align:center">
-    <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> ·
-    <a href="#" id="deleteaccount">Delete account</a>
-  </p>
 </div>
+
+<footer class="lfooter">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
+  <span style="flex:1"></span>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+  <a href="#" id="deleteaccount">Delete account</a>
+</footer>
 <script src="/app.js"></script>
 </body>
 </html>

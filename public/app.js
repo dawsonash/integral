@@ -308,9 +308,12 @@
 
   // ---------- create test ----------
 
-  document.querySelectorAll('.tabs button').forEach(function (b) {
+  // Scoped to #source: the plan chooser's interval toggle is also a .tabs, and
+  // an unscoped selector both steals its click handler and shadows the active
+  // source tab when reading data-tab below.
+  document.querySelectorAll('#source button').forEach(function (b) {
     b.onclick = function () {
-      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.remove('active'); });
+      document.querySelectorAll('#source button').forEach(function (x) { x.classList.remove('active'); });
       b.classList.add('active');
       document.querySelectorAll('[data-pane]').forEach(function (p) {
         p.style.display = p.dataset.pane === b.dataset.tab ? '' : 'none';
@@ -321,7 +324,7 @@
   document.getElementById('create').onclick = function () {
     var fd = new FormData();
     fd.append('name', document.getElementById('name').value);
-    var tab = document.querySelector('.tabs button.active').dataset.tab;
+    var tab = document.querySelector('#source button.active').dataset.tab;
     if (tab === 'repo') {
       var repoSel = document.getElementById('repo');
       if (!repoSel.value) return msg('Connect GitHub and choose a repository first.');
@@ -375,13 +378,17 @@
       tests.forEach(function (t) {
         var tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><a href="/tests/' + t.id + '/setup"></a></td>' +
+          '<td class="js-name"></td>' +
           (showAuthor ? '<td class="muted js-author"></td>' : '') +
           '<td><span class="badge ' + t.status + '">' + t.status + '</span></td>' +
           '<td>' + t.completed_count + ' / ' + t.response_cap + '</td>' +
           '<td class="muted">' + fmtDate(t.created_at) + '</td>' +
-          '<td><a class="btn btn-sm" href="/tests/' + t.id + '/results">Results</a></td>';
-        tr.querySelector('a').textContent = t.name;
+          '<td class="row-actions">' +
+            '<a class="btn btn-sm" href="/tests/' + t.id + '/setup">Setup</a>' +
+            '<a class="btn btn-sm" href="/tests/' + t.id + '/results">Results</a>' +
+          '</td>';
+        // textContent, not innerHTML — the name is whatever the author typed.
+        tr.querySelector('.js-name').textContent = t.name;
         if (showAuthor) tr.querySelector('.js-author').textContent = t.author || '—';
         tbody.appendChild(tr);
       });

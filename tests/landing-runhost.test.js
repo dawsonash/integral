@@ -51,5 +51,6 @@ test('run host never serves the landing page', async () => {
 test('dashboard host still serves the landing page', async () => {
   const res = await get('/');
   assert.equal(res.status, 200);
-  assert.match(res.body, /Usability tests for the slice you just built/);
+  // Structural marker, not headline copy — see the note in api.test.js.
+  assert.match(res.body, /class="lnav"/);
 });

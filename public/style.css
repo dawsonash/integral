@@ -5,8 +5,16 @@
   --ink: #1a1a2e;
   --muted: #6b7280;
   --line: #e5e7eb;
-  --accent: #4f46e5;
+  --accent: #c2410c;
   --accent-ink: #ffffff;
+  /* Product color: the dark blue of the title card that opens the demo tour
+     (scripts/demo-video.js). Reserved for CTAs — it lands a hair off --ink
+     (#1a1a2e), so links and other accent affordances stay orange rather than
+     becoming indistinguishable from body text. filter: brightness() barely
+     moves a colour this dark, hence an explicit hover. */
+  --cta: #14142e;
+  --cta-hover: #26264f;
+  --cta-ink: #ffffff;
   --ok: #16a34a;
   --bad: #dc2626;
   --warn-bg: #fef9c3;
@@ -31,6 +39,22 @@ body {
 }
 .topbar .brand { font-weight: 700; font-size: 17px; text-decoration: none; color: var(--ink); }
 .topbar .brand span { color: var(--accent); }
+/* Site footer, on every page including the landing page. Lives here rather
+   than in landing.css because the app pages load style.css alone. */
+.lfooter {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 28px 24px 40px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.lfooter .brand { font-weight: 700; text-decoration: none; color: var(--ink); }
+.lfooter .brand span { color: var(--accent); }
+.lfooter a { color: var(--muted); }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -64,8 +88,8 @@ button, .btn {
   text-decoration: none;
 }
 button:hover, .btn:hover { border-color: var(--accent); }
-.btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary { background: var(--cta); color: var(--cta-ink); border-color: var(--cta); }
+.btn-primary:hover { background: var(--cta-hover); border-color: var(--cta-hover); }
 .btn-sm { padding: 4px 10px; font-size: 13px; }
 .muted { color: var(--muted); font-size: 13px; }
 .badge {
@@ -82,9 +106,18 @@ button:hover, .btn:hover { border-color: var(--accent); }
 .badge.live { background: #dcfce7; color: #166534; }
 .badge.closed { background: #fee2e2; color: #991b1b; }
 .badge.warn { background: var(--warn-bg); color: var(--warn-ink); text-transform: none; }
+/* Sentiment buckets on free-text feedback. Same 100/800 pairs as live/closed —
+   --ok/--bad are text-weight and too dark to fill a pill with. */
+.badge.positive { background: #dcfce7; color: #166534; }
+.badge.negative { background: #fee2e2; color: #991b1b; }
+.badge.neutral { background: var(--line); color: var(--muted); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); }
 td { padding: 8px; border-bottom: 1px solid var(--line); }
+/* Trailing action cell: keeps the buttons on one line and hard right, so the
+   column stays a fixed width no matter how long the test names get. */
+.row-actions { white-space: nowrap; text-align: right; }
+.row-actions .btn + .btn { margin-left: 6px; }
 .row { display: flex; gap: 16px; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 220px; }
 a { color: var(--accent); }

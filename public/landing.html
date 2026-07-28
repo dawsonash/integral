@@ -22,15 +22,13 @@
 
 <header class="hero">
   <div class="hero-copy">
-    <h1>Usability tests for the slice you just built</h1>
-    <p class="hero-sub">Paste HTML or drop a zip → get a shareable test link. Watch real
-    people attempt your task — session replay, click heatmaps, success signals.
-    Testers never need an account.</p>
+    <h1>Sync your repo, get a shareable usability-test link.</h1>
+    <p class="hero-sub">Test your frontend without the overhead of a full product or staging environment. Integral hosts it, you get the results.</p>
+    
     <div class="hero-ctas">
       <a class="btn btn-primary js-signin" href="/auth/github">Sign in with GitHub</a>
       <a class="btn" href="#how">See how it works</a>
     </div>
-    <p class="muted">Free plan · no credit card · first test live in ~2 minutes</p>
   </div>
   <div class="hero-visual" aria-hidden="true">
     <div class="card-stack" id="cardStack">
@@ -41,7 +39,7 @@
           <span class="stack-dot dot-yellow"></span>
           <span class="stack-dot dot-green"></span>
           <span class="stack-url">run.integral.app/t/3f9c</span>
-          <span class="stack-badge badge-heatmap">Heatmaps</span>
+          <span class="stack-badge">Heatmaps</span>
         </div>
         <div class="stack-body">
           <div class="skel skel-title"></div>
@@ -73,7 +71,7 @@
               <span class="player-tick tick-warn" style="left:78%"></span>
               <span class="player-thumb" style="left:58%"></span>
             </div>
-            <span class="player-time">1:24</span>
+            <span class="player-time skel skel-dark"></span>
           </div>
         </div>
       </article>
@@ -84,10 +82,10 @@
           <span class="stack-dot dot-yellow"></span>
           <span class="stack-dot dot-green"></span>
           <span class="stack-url">run.integral.app/t/7a1e</span>
-          <span class="stack-badge badge-replay">Session replays</span>
+          <span class="stack-badge">Session replays</span>
         </div>
         <div class="stack-body">
-          <span class="rec-pill"><span class="rec-dot"></span>REC</span>
+          <span class="rec-pill"><span class="rec-dot"></span><span class="skel rec-skel"></span></span>
           <div class="skel skel-title"></div>
           <div class="skel skel-line w-80"></div>
           <div class="replay-stage">
@@ -109,7 +107,7 @@
               <div class="player-fill replay-fill"></div>
               <span class="player-thumb" style="left:41%"></span>
             </div>
-            <span class="player-time">0:47</span>
+            <span class="player-time skel skel-dark"></span>
           </div>
         </div>
       </article>
@@ -120,7 +118,7 @@
           <span class="stack-dot dot-yellow"></span>
           <span class="stack-dot dot-green"></span>
           <span class="stack-url">run.integral.app/t/9c1d</span>
-          <span class="stack-badge badge-graph">Insights</span>
+          <span class="stack-badge">Insights</span>
         </div>
         <div class="stack-body">
           <div class="skel skel-title"></div>
@@ -143,6 +141,53 @@
             <div class="stat"><span class="skel skel-num"></span><span class="skel skel-label"></span></div>
             <div class="stat"><span class="skel skel-num"></span><span class="skel skel-label"></span></div>
             <div class="stat"><span class="skel skel-num"></span><span class="skel skel-label"></span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="stack-card" data-card="sentiment">
+        <div class="stack-chrome">
+          <span class="stack-dot dot-red"></span>
+          <span class="stack-dot dot-yellow"></span>
+          <span class="stack-dot dot-green"></span>
+          <span class="stack-url">run.integral.app/t/5b72</span>
+          <span class="stack-badge">Sentiment</span>
+        </div>
+        <div class="stack-body">
+          <div class="skel skel-title"></div>
+          <!-- Same shape as the results page: a rollup across scored feedback,
+               then the comments themselves with the negative ones on top. -->
+          <div class="sent-rollup">
+            <span class="roll-seg seg-negative" style="width:33%"></span>
+            <span class="roll-seg seg-neutral" style="width:17%"></span>
+            <span class="roll-seg seg-positive" style="width:50%"></span>
+          </div>
+          <div class="sent-controls">
+            <span class="sent-legend skel"></span>
+            <span class="sent-chip skel"></span>
+          </div>
+          <div class="sent-feed">
+            <div class="sent-row">
+              <div class="sent-lines">
+                <div class="skel skel-line w-80"></div>
+                <div class="skel skel-line w-55"></div>
+              </div>
+              <span class="sent-pill skel"></span>
+            </div>
+            <div class="sent-row">
+              <div class="sent-lines">
+                <div class="skel skel-line w-70"></div>
+                <div class="skel skel-line w-60"></div>
+              </div>
+              <span class="sent-pill skel"></span>
+            </div>
+            <div class="sent-row">
+              <div class="sent-lines">
+                <div class="skel skel-line w-75"></div>
+                <div class="skel skel-line w-55"></div>
+              </div>
+              <span class="sent-pill skel"></span>
+            </div>
           </div>
         </div>
       </article>
@@ -172,12 +217,23 @@
       <span class="demo-play-icon" aria-hidden="true">▶</span>
       <span class="demo-play-label">Play the product tour</span>
     </button>
+    <div class="demo-bar" id="demobar">
+      <button type="button" class="demo-bar-play" id="demotoggle" aria-controls="demovideo"
+              aria-label="Pause">❚❚</button>
+      <div class="demo-track" id="demotrack" tabindex="0" role="slider"
+           aria-label="Seek through the product tour"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="demo-fill" id="demofill"></div>
+        <span class="demo-thumb" id="demothumb"></span>
+      </div>
+      <span class="demo-time" id="demotime">0:00 / 0:00</span>
+    </div>
   </div>
 </section>
 
 <section id="features" class="lsection">
   <h2>Everything you need to watch someone actually use it</h2>
-  <div class="lgrid">
+  <div class="lgrid lgrid-2">
     <div class="card lfeature">
       <div class="licon">⇪</div>
       <h3>You are the runtime</h3>
@@ -198,6 +254,13 @@
       <p class="muted">Give testers a task and define what success looks like — a click
       on the right element, a page reached. Get completion rates, timings, and
       full JSON/CSV export.</p>
+    </div>
+    <div class="card lfeature">
+      <div class="licon">◑</div>
+      <h3>Sentiment, scored not guessed</h3>
+      <p class="muted">Every comment and post-test note gets a polarity score from a
+      word lexicon — no model, no API call, same answer every time. Sort the negative
+      ones to the top and read those first, instead of all forty.</p>
     </div>
   </div>
 </section>
@@ -228,7 +291,6 @@
 
 <section id="pricing" class="lsection">
   <h2>Pricing</h2>
-  <p class="lsub muted">Start free. Upgrade when a test outgrows the limits.</p>
 
   <!-- Displayed prices must match the Stripe prices behind the
        STRIPE_PRICE_* ids (see docs/go-to-market.md). Yearly is exactly 10%
@@ -255,8 +317,7 @@
       <a class="btn js-signin" href="/auth/github">Start free</a>
     </div>
 
-    <div class="card price-card featured">
-      <span class="badge">Most popular</span>
+    <div class="card price-card">
       <h3>Individual</h3>
       <div class="price">
         $<span data-price="individual">20</span><span class="muted"> / month</span>
@@ -313,25 +374,64 @@
 })();
 
 // Demo tour. Never starts on its own — the visitor toggles it, by the button
-// or by clicking the video. preload="none" means the ~1.7 MB is not fetched
+// or by clicking the video. preload="none" means the ~2.1 MB is not fetched
 // until they do, so the tour costs nothing to anyone who scrolls past it.
 (function () {
   var video = document.getElementById('demovideo');
   var button = document.getElementById('demoplay');
   if (!video || !button) return;
 
-  var broken = false;
+  var bar = document.getElementById('demobar');
+  var toggleBtn = document.getElementById('demotoggle');
+  var track = document.getElementById('demotrack');
+  var fill = document.getElementById('demofill');
+  var thumb = document.getElementById('demothumb');
+  var time = document.getElementById('demotime');
 
-  function sync() { button.classList.toggle('is-hidden', !video.paused); }
+  var broken = false;
+  var started = false;
+
+  function clock(s) {
+    if (!s || !isFinite(s)) s = 0;
+    var r = Math.floor(s % 60);
+    return Math.floor(s / 60) + ':' + (r < 10 ? '0' : '') + r;
+  }
+
+  function paint() {
+    var pct = video.duration ? (video.currentTime / video.duration) * 100 : 0;
+    fill.style.width = pct + '%';
+    thumb.style.left = pct + '%';
+    time.textContent = clock(video.currentTime) + ' / ' + clock(video.duration);
+    track.setAttribute('aria-valuenow', Math.round(pct));
+    track.setAttribute('aria-valuetext', clock(video.currentTime) + ' of ' + clock(video.duration));
+  }
+
+  // The big overlay is the pre-roll interface only. Once the tour has been
+  // started the bar owns play/pause, so pausing doesn't slam the overlay back
+  // over the scrubber the visitor is trying to drag. Whether the bar is
+  // actually shown is CSS's call (hover / focus / paused) — see landing.css.
+  function sync() {
+    if (!video.paused) started = true;
+    button.classList.toggle('is-hidden', started);
+    bar.classList.toggle('is-on', started && !broken);
+    bar.classList.toggle('is-paused', video.paused);
+    toggleBtn.textContent = video.paused ? '▶' : '❚❚';
+    toggleBtn.setAttribute('aria-label', video.paused ? 'Play' : 'Pause');
+  }
   video.addEventListener('play', sync);
   video.addEventListener('pause', sync);
+  video.addEventListener('timeupdate', paint);
+  video.addEventListener('loadedmetadata', paint);
+  video.addEventListener('seeked', paint);
 
   // A dead media pipeline makes play() a silent no-op, so say so and offer the
   // file directly rather than leaving a button that looks live and does nothing.
   function fail(err) {
     if (err && err.name === 'NotAllowedError') return; // autoplay policy; the button still works
     broken = true;
+    started = false;
     button.classList.remove('is-hidden');
+    bar.classList.remove('is-on');
     button.querySelector('.demo-play-label').textContent = 'Open the tour in a new tab';
     if (window.console) console.warn('demo video unplayable', (video.error && video.error.message) || err);
   }
@@ -344,6 +444,39 @@
   }
   button.addEventListener('click', toggle);
   video.addEventListener('click', toggle);
+  toggleBtn.addEventListener('click', toggle);
+
+  function seek(clientX) {
+    if (!video.duration) return;
+    var r = track.getBoundingClientRect();
+    var ratio = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    video.currentTime = ratio * video.duration;
+    paint();
+  }
+
+  // Pointer capture so a drag that leaves the track keeps scrubbing.
+  track.addEventListener('pointerdown', function (e) {
+    track.setPointerCapture(e.pointerId);
+    seek(e.clientX);
+    e.preventDefault();
+  });
+  track.addEventListener('pointermove', function (e) {
+    if (track.hasPointerCapture(e.pointerId)) seek(e.clientX);
+  });
+
+  track.addEventListener('keydown', function (e) {
+    if (e.key === ' ' || e.key === 'Enter') toggle();
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      if (!video.duration) return;
+      var step = (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 10 : 5);
+      video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + step));
+      paint();
+    } else return;
+    e.preventDefault();
+  });
+
+  sync();
+  paint();
 })();
 
 // Monthly/yearly pricing toggle. Yearly is exactly 10% off, shown as the
@@ -399,13 +532,17 @@
   var stack = document.getElementById('cardStack');
   if (!stack) return;
   var order = Array.prototype.slice.call(stack.children);
-  var depths = ['depth-0', 'depth-1', 'depth-2'];
+  // One depth class per card, so adding a card to the stack needs only a
+  // matching .depth-N rule in landing.css.
+  var depths = order.map(function (_, i) { return 'depth-' + i; });
+
+  function setDepth(card, cls) {
+    card.classList.remove.apply(card.classList, depths.concat('depth-out'));
+    card.classList.add(cls);
+  }
 
   function paint() {
-    order.forEach(function (card, i) {
-      card.classList.remove('depth-0', 'depth-1', 'depth-2', 'depth-out');
-      card.classList.add(depths[i]);
-    });
+    order.forEach(function (card, i) { setDepth(card, depths[i]); });
   }
   paint();
 
@@ -418,16 +555,12 @@
     if (flying) return;
     flying = true;
     var front = order[0];
-    front.classList.remove('depth-0');
+    front.classList.remove(depths[0]);
     front.classList.add('depth-out');
-    order.slice(1).forEach(function (card, i) {
-      card.classList.remove('depth-1', 'depth-2');
-      card.classList.add(depths[i]);
-    });
+    order.slice(1).forEach(function (card, i) { setDepth(card, depths[i]); });
     setTimeout(function () {
       order.push(order.shift());
-      front.classList.remove('depth-out');
-      front.classList.add('depth-2');
+      setDepth(front, depths[depths.length - 1]);
       flying = false;
     }, 550);
   }

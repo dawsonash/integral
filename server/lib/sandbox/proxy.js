@@ -22,6 +22,23 @@ const DROP_RES = new Set([
   'set-cookie',
 ]);
 
+// Node's fetch sends any stream body with chunked transfer-encoding, and
+// wsgiref — which backs Django's runserver and Flask's dev server — cannot
+// decode one: the app reads an empty body and every form post silently does
+// nothing. Bodies small enough to hold are buffered so fetch can declare a
+// real Content-Length; larger ones (file uploads) still stream, because
+// buffering those costs more than the compatibility is worth.
+const BUFFERED_BODY_MAX = 2 * 1024 * 1024;
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 // The injected fake-user session must win over whatever anonymous session
 // cookie the app already handed this browser, or gated pages regress to
 // logged-out after the first response.
@@ -96,7 +113,8 @@ async function proxyRequest(req, res, { handle, mountPrefix, injectScript, headS
       // The app-wide JSON parser already consumed this body; re-serialize it.
       body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
     } else {
-      body = req; // form posts, multipart, …: stream through untouched
+      const declared = Number(req.headers['content-length'] || 0);
+      body = declared > 0 && declared <= BUFFERED_BODY_MAX ? await readBody(req) : req;
     }
   }
 

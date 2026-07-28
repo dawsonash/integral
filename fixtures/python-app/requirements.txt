@@ -1,0 +1,5 @@
+# Decoy dependencies: they make classify() see a Postgres-backed Flask app.
+# app.py is standard-library only, so the sandbox test boots it with
+# install: false and never pip-installs these.
+flask==3.0.0
+psycopg2-binary==2.9.9 ; sys_platform != 'win32'

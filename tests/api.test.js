@@ -242,6 +242,31 @@ test('post-test notes are collected independently of SEQ and show up in results'
   assert.equal(results.notes[0].note, 'Loved the flow, but the button was hard to find.');
   const session = results.sessions.find((s) => s.id === start.sessionId);
   assert.equal(session.notes, 'Loved the flow, but the button was hard to find.');
+  // Scored on write, and surfaced in both shapes. This note is also the
+  // mixed-sentiment trap: the complaint after "but" loses to "Loved".
+  assert.equal(typeof results.notes[0].sentiment, 'number');
+  assert.equal(results.notes[0].sentimentLabel, 'positive');
+  assert.equal(session.notesSentiment, results.notes[0].sentiment);
+});
+
+test('SEQ comments are sentiment-scored on write and bucketed in results', async () => {
+  const t = await createHtmlTest('Sentiment');
+  await launch(t.id);
+  await runSession(t.id, {
+    seq: { score: 2, comment: 'Confusing and frustrating, I could not find anything.' },
+    ua: 'sentiment-ua',
+  });
+
+  const { json: results } = await api('GET', `/api/tests/${t.id}/results`);
+  assert.equal(results.comments.length, 1);
+  const c = results.comments[0];
+  assert.ok(c.sentiment < -0.05, `expected negative compound, got ${c.sentiment}`);
+  assert.equal(c.sentimentLabel, 'negative');
+  const session = results.sessions.find((s) => s.id === c.sessionId);
+  assert.equal(session.seqCommentSentiment, c.sentiment);
+  // No note was left on this session — absent text scores null, not neutral.
+  assert.equal(session.notesSentiment, null);
+  assert.equal(results.notes.length, 0);
 });
 
 test('roam: client-reported task duration is used instead of total session time', async () => {
@@ -579,6 +604,7 @@ test('results export as CSV and JSON', async () => {
   assert.match(csvRes.headers.get('content-type'), /text\/csv/);
   const csv = await csvRes.text();
   assert.match(csv.split('\n')[0], /^id,status,success/);
+  assert.match(csv.split('\n')[0], /seqComment,seqCommentSentiment,notes,notesSentiment/);
   assert.match(csv, /"has,comma ""quotes"""/);
   const { json } = await api('GET', `/api/tests/${t.id}/export.json`);
   assert.equal(json.metrics.completed, 1);
@@ -649,7 +675,9 @@ test('logged-out / serves the landing page, uncached', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('cache-control'), 'no-store');
   const body = await res.text();
-  assert.match(body, /Usability tests for the slice you just built/);
+  // Structural marker, not headline copy: the landing nav is landing-only and
+  // survives marketing rewrites, which the old <h1> assertion did not.
+  assert.match(body, /class="lnav"/);
   assert.ok(!body.includes('id="main"'));
 });
 

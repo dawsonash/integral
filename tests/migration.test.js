@@ -53,6 +53,10 @@ CREATE TABLE sessions (
   db.prepare(
     "INSERT INTO tests (id, name, status, source_type, entry_path, task_prompt, success_type, success_selector, success_label, created_at) VALUES ('legacy1', 'Legacy booking', 'live', 'html', 'index.html', 'Book a desk', 'click', '#confirm', 'Confirm', ?)"
   ).run(Date.now());
+  // A comment collected before sentiment existed — boot must score it.
+  db.prepare(
+    "INSERT INTO sessions (id, test_id, status, success, started_at, duration_ms, seq_score, seq_comment) VALUES ('legacysess1', 'legacy1', 'completed', 1, ?, 9000, 2, 'This was terrible and frustrating.')"
+  ).run(Date.now());
   db.close();
 }
 
@@ -81,6 +85,16 @@ test('boot adds the new columns to a pre-existing database', () => {
   const sessionCols = db.pragma('table_info(sessions)').map((c) => c.name);
   assert.ok(testCols.includes('success_signals'));
   assert.ok(sessionCols.includes('signal_hits'));
+  assert.ok(sessionCols.includes('seq_comment_sentiment'));
+  assert.ok(sessionCols.includes('notes_sentiment'));
+});
+
+test('adding the sentiment columns backfills the free text already collected', () => {
+  const { db } = require('../server/db');
+  const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get('legacysess1');
+  assert.ok(row.seq_comment_sentiment < -0.05, `expected negative, got ${row.seq_comment_sentiment}`);
+  // No note was left, so there is nothing to score — not a fake neutral.
+  assert.equal(row.notes_sentiment, null);
 });
 
 test('legacy row survives and synthesizes a one-signal chain', async () => {

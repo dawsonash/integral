@@ -8,16 +8,28 @@
 <style>
   .layout { display: flex; gap: 20px; align-items: flex-start; }
   .config { width: 380px; flex-shrink: 0; }
-  .preview { flex: 1; min-width: 0; }
-  #frame { width: 100%; height: 620px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-  .modebar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  /* The config column is far taller than the preview, so the preview rides
+     along instead of scrolling off. Capped to the viewport and laid out as a
+     column so the iframe absorbs the slack — the mode bar and the button
+     below it stay reachable however short the window is. */
+  .preview {
+    flex: 1; min-width: 0;
+    position: sticky; top: 24px;
+    /* Definite height, not just a cap: the row is align-items:flex-start, so
+       with max-height alone the column takes its content height and #frame's
+       flex:1 has no slack to absorb — it collapses to its min-height. */
+    height: calc(100vh - 48px);
+    display: flex; flex-direction: column;
+  }
+  #frame { width: 100%; flex: 1; min-height: 280px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .modebar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-shrink: 0; }
   .modebar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   #chips { list-style: none; margin: 8px 0 0; padding: 0; counter-reset: chip; }
-  #chips li { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 7px; padding: 7px 10px; font-size: 13px; margin-top: 6px; display: flex; gap: 8px; align-items: baseline; counter-increment: chip; }
-  #chips li::before { content: counter(chip); font-weight: 700; color: #6366f1; }
+  #chips li { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 7px; padding: 7px 10px; font-size: 13px; margin-top: 6px; display: flex; gap: 8px; align-items: baseline; counter-increment: chip; }
+  #chips li::before { content: counter(chip); font-weight: 700; color: #c2410c; }
   #chips li .body { flex: 1; min-width: 0; }
   #chips li code { font-size: 11px; word-break: break-all; display: block; }
-  #chips li .del { background: none; border: 0; cursor: pointer; color: #6366f1; font-size: 14px; padding: 0 2px; }
+  #chips li .del { background: none; border: 0; cursor: pointer; color: #c2410c; font-size: 14px; padding: 0 2px; }
   #chips li.finish { background: #ecfdf5; border-color: #a7f3d0; }
   #chips li.finish::after { content: "finish line"; font-size: 11px; font-weight: 700; color: #059669; white-space: nowrap; }
   #chiphint { font-size: 13px; }
@@ -130,10 +142,18 @@
         <span class="muted" id="curpage"></span>
       </div>
       <iframe id="frame" title="Artifact preview"></iframe>
-      <button id="deletetest" style="margin-top:10px">Delete</button>
+      <button id="deletetest" style="margin-top:10px;flex-shrink:0;align-self:flex-start">Delete</button>
     </div>
   </div>
 </div>
+
+<footer class="lfooter">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
+  <span style="flex:1"></span>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+</footer>
 <script src="/setup.js"></script>
 </body>
 </html>

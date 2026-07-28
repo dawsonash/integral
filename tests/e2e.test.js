@@ -177,6 +177,17 @@ test('full loop: setup UI picker → launch → testee flow → results', { time
   await rp.goto(`${base}/tests/${t.id}/results`, { waitUntil: 'networkidle0' });
   const statText = await rp.$eval('#metrics', (el) => el.textContent);
   assert.match(statText, /100%/);
+
+  // Comment renders with its sentiment badge and the card rollup. "Smooth,
+  // found it right away" reads positive to a human but scores 0 — neither
+  // "smooth" nor "found" is in VADER's lexicon — which is exactly the caveat
+  // the card copy carries.
+  const commentText = await rp.$eval('#comments', (el) => el.textContent);
+  assert.match(commentText, /Smooth, found it right away/);
+  assert.match(commentText, /neutral/);
+  const rollText = await rp.$eval('#commentroll', (el) => el.textContent);
+  assert.match(rollText, /0 negative · 1 neutral · 0 positive/);
+
   await rp.click('[data-replay]');
   await rp.waitForSelector('#playerview iframe', { timeout: 15000 });
   const replayOk = await rp.waitForFunction(() => {

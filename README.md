@@ -54,7 +54,8 @@ recipe (Caddy, systemd, Litestream backups).
 6. **Report** (`/tests/:id/results`) — success rate, per-step chain progress,
    time-on-task distribution, SEQ distribution + comments, drop-off,
    click/move/scroll **attention heatmap** overlaid on the artifact, full
-   **session replays**, and CSV/JSON export.
+   **session replays**, and CSV/JSON export. Comments and post-test notes carry
+   a **lexicon sentiment** badge so the negative ones can be sorted to the top.
 
 ## What's captured (spec §4)
 
@@ -67,8 +68,9 @@ recipe (Caddy, systemd, Litestream backups).
 
 ## Server-rendered apps (fake-backend sandbox)
 
-A repo with no static HTML but a recognizable server framework (Express, Koa,
-Fastify, …) becomes a **server-rendered test** ([docs/fake-backend-spec.md](docs/fake-backend-spec.md)):
+A repo with no static HTML but a recognizable server framework — Node (Express,
+Koa, Fastify, Nest, Next) or Python (Django, Flask, FastAPI, Starlette) —
+becomes a **server-rendered test** ([docs/fake-backend-spec.md](docs/fake-backend-spec.md)):
 Integral provisions a throwaway Postgres database, runs the repo's own schema
 setup against it, seeds fake rows (dev-editable per test in setup), boots the
 app as a child process with dummy secrets, auto-authenticates a fake user, and
@@ -76,6 +78,15 @@ reverse-proxies it same-origin under `/t/:id/app/*` with the usual recorder
 injection — real pages from fake data, never real credentials or a real
 database. Needs a local Postgres (`INTEGRAL_SANDBOX_PG_URL`, default
 `127.0.0.1:5432`); per spec §9 the prototype is for trusted repos only.
+
+Python repos are classified from `requirements.txt` / `pyproject.toml` /
+`Pipfile`, installed into a virtualenv inside the artifact dir
+(`INTEGRAL_PYTHON`, default `python3`), and booted with the port interpolated
+into the start command — `$PORT` rather than Node's `process.env.PORT`. Django
+gets `migrate` + `loaddata` and dummy settings vars for free. There's no
+Python equivalent of the express-session cookie forgery, so auto-auth uses the
+framework-agnostic `login` strategy: drive the app's own login endpoint once at
+boot and reuse its cookie.
 
 ## Data quality (spec §5)
 
@@ -128,6 +139,7 @@ server/
   lib/auth.js       GitHub OAuth + sealed session cookie + dev login
   lib/plans.js      plan limits (free / pro / unlimited)
   lib/signals.js    success-signal chains (+ legacy single-target synthesis)
+  lib/sentiment.js  VADER lexicon polarity for SEQ comments / notes (no model)
   lib/retention.js  daily sweep: retention windows, link expiry, orphan cleanup
   lib/purge.js      test/session/account deletion
   lib/ratelimit.js  express-rate-limit instances for the abuse surfaces

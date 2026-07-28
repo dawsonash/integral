@@ -154,35 +154,21 @@
 
   // ---------- flow ----------
   function showConsent() {
+    // The task leads: someone deciding whether to continue should already know
+    // what they're being asked to do, not meet it for the first time in the
+    // taskbar after consenting. Drafts without a prompt just omit the block.
+    var task = config.taskPrompt
+      ? '<div class="gate-task"><b>Your task</b>' + escapeHtml(config.taskPrompt) + '</div>'
+      : '';
     gatecard.innerHTML =
+      '<div class="gate-brand">◱ Integral<span>.</span></div>' +
       '<h1>' + escapeHtml(config.name) + '</h1>' +
       '<p>You’re about to try a short task in a prototype. It usually takes a couple of minutes.</p>' +
-      '<p class="muted">This session is recorded for usability research (your clicks and movements — anything you type is masked; ' +
+      task +
+      '<p class="muted gate-consent">This session is recorded for usability research (your clicks and movements — anything you type is masked; ' +
       '<a href="/privacy" target="_blank">privacy policy</a>). Continue?</p>' +
-      '<button class="btn-primary" id="consent">Continue</button>' +
-      '<p class="muted" style="margin-top:16px;font-size:12px"><a href="#" id="reportlink">Report this test</a></p>';
+      '<button class="btn-primary" id="consent">Continue</button>';
     document.getElementById('consent').onclick = config.screenerEnabled ? showScreener : startSession;
-    document.getElementById('reportlink').onclick = function (e) { e.preventDefault(); showReport(); };
-  }
-
-  function showReport() {
-    gatecard.innerHTML =
-      '<h2>Report this test</h2>' +
-      '<p class="muted">Flag this page if it looks like phishing, impersonation, or anything else abusive. A human reviews every report.</p>' +
-      '<label>What’s wrong?</label>' +
-      '<textarea id="reportdetail" placeholder="e.g. this pretends to be a bank login page"></textarea>' +
-      '<div style="margin-top:12px"><button class="btn-primary" id="reportsend">Send report</button> ' +
-      '<button id="reportcancel">Back</button></div>';
-    document.getElementById('reportcancel').onclick = showConsent;
-    document.getElementById('reportsend').onclick = function () {
-      fetch(api + '/report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'testee_flag', detail: document.getElementById('reportdetail').value }),
-      }).then(function () {
-        gatecard.innerHTML = '<h2>Thanks — report received.</h2><p class="muted">You can close this tab.</p>';
-      });
-    };
   }
 
   function showScreener() {

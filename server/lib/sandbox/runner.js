@@ -15,6 +15,16 @@ const { startStubs } = require('./stubs');
 
 const MAX_LOG_LINES = 300;
 
+// Python apps get a virtualenv inside the artifact dir rather than polluting
+// the host interpreter, and the sentinel marks a *completed* install (a bare
+// venv dir would also exist after a pip failure, silently skipping the retry).
+const VENV_DIR = '.integral-venv';
+const VENV_READY = `${VENV_DIR}/.integral-installed`;
+
+function pythonBin() {
+  return process.env.INTEGRAL_PYTHON || 'python3';
+}
+
 function pushLog(logs, label, chunk) {
   for (const line of String(chunk).split('\n')) {
     if (!line.trim()) continue;
@@ -55,6 +65,36 @@ function runCmd(cmd, { cwd, env, logs, label, timeoutMs = 120000 }) {
   });
 }
 
+// Dependency installation, per runtime. A pulled repo arrives without its
+// dependency tree, so the app can't even import its framework. Installed once
+// per pull (the artifact dir persists across sandbox boots), and it needs real
+// network — so it runs *without* the stub-proxy env, before the app starts.
+// Returns null when nothing needs installing.
+function installPlan(root, config) {
+  if (config.install === false) return null;
+  const custom = config.install?.cmd;
+
+  if ((config.runtime || 'node') === 'python') {
+    if (fs.existsSync(path.join(root, VENV_READY))) return null;
+    const req = ['requirements.txt', 'requirements/base.txt', 'requirements/common.txt']
+      .find((r) => fs.existsSync(path.join(root, r)));
+    const install = custom
+      || (req && `"${VENV_DIR}/bin/pip" install -q -r ${req}`)
+      || (fs.existsSync(path.join(root, 'pyproject.toml')) && `"${VENV_DIR}/bin/pip" install -q .`);
+    if (!install) return null;
+    // venv creation is idempotent, so a retry after a failed pip reuses it.
+    return { cmd: `${pythonBin()} -m venv ${VENV_DIR} && ${install} && touch ${VENV_READY}` };
+  }
+
+  if (!fs.existsSync(path.join(root, 'package.json'))) return null;
+  if (fs.existsSync(path.join(root, 'node_modules'))) return null;
+  return {
+    cmd: custom || (fs.existsSync(path.join(root, 'package-lock.json'))
+      ? 'npm ci --no-audit --no-fund'
+      : 'npm install --no-audit --no-fund'),
+  };
+}
+
 // The environment handed to the app: slim base (never Integral's own
 // process.env — the whole point is that no real secret reaches the sandbox),
 // then the config's dummy values, then ephemeral-DB coordinates under every
@@ -70,6 +110,17 @@ function buildEnv(config, handle) {
     NODE_ENV: 'development',
     ...(config.env || {}),
   };
+  if ((config.runtime || 'node') === 'python') {
+    // Put the virtualenv first on PATH so `python`, `flask`, `uvicorn` and
+    // `alembic` all resolve to it — that's what makes the schema and seed
+    // commands run against the app's own dependencies. Prepended before the
+    // venv exists (buildEnv runs ahead of the install step); by the time
+    // anything is spawned with this env, it does.
+    env.PATH = `${path.join(artifactRoot(handle.testId), VENV_DIR, 'bin')}:${env.PATH}`;
+    // Unbuffered, or the app's stdout only reaches the sandbox log on exit —
+    // which is exactly when a developer needs it most.
+    env.PYTHONUNBUFFERED = '1';
+  }
   const c = handle.coords;
   if (c) {
     const tokens = {
@@ -146,18 +197,11 @@ async function boot(test, config) {
     handle.stub = await startStubs(config.stubs || []);
     const env = buildEnv(config, handle);
 
-    // 2b. dependencies: a pulled repo arrives without node_modules, so the
-    // app can't even require its framework. Installed once per pull (the
-    // artifact dir persists across sandbox boots). npm needs real network —
-    // it runs *without* the stub-proxy env, before the app ever starts.
-    if (config.install !== false && fs.existsSync(path.join(root, 'package.json')) &&
-        !fs.existsSync(path.join(root, 'node_modules'))) {
-      const installCmd = config.install?.cmd ||
-        (fs.existsSync(path.join(root, 'package-lock.json'))
-          ? 'npm ci --no-audit --no-fund'
-          : 'npm install --no-audit --no-fund');
-      const npmEnv = { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG, TMPDIR: env.TMPDIR };
-      await runCmd(installCmd, { cwd: root, env: npmEnv, logs, label: 'install', timeoutMs: 300000 });
+    // 2b. dependencies (see installPlan): real network, no stub proxy.
+    const install = installPlan(root, config);
+    if (install) {
+      const installEnv = { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG, TMPDIR: env.TMPDIR };
+      await runCmd(install.cmd, { cwd: root, env: installEnv, logs, label: 'install', timeoutMs: 300000 });
     }
 
     // 3. the app's own schema setup, pointed at the ephemeral DB
@@ -218,4 +262,4 @@ async function teardown(handle) {
   if (handle.coords) await sandboxDb.drop(handle.testId).catch(() => {});
 }
 
-module.exports = { boot, teardown, buildEnv, freePort };
+module.exports = { boot, teardown, buildEnv, freePort, installPlan };

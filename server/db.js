@@ -127,9 +127,12 @@ CREATE INDEX IF NOT EXISTS idx_interactions_session ON interactions(session_id);
 
 // CREATE TABLE IF NOT EXISTS never alters an existing table, so columns added
 // after a database was first created must be backfilled here.
+// Returns true when the column was actually added, so a caller can hang a
+// one-time backfill off it.
 function ensureColumn(table, col, ddl) {
   const has = db.pragma(`table_info(${table})`).some((c) => c.name === col);
   if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+  return !has;
 }
 ensureColumn('tests', 'success_signals', 'TEXT');
 ensureColumn('sessions', 'signal_hits', 'TEXT');
@@ -157,6 +160,26 @@ ensureColumn('tests', 'backend_config', 'TEXT');
 ensureColumn('tests', 'team_id', 'INTEGER REFERENCES teams(id)');
 // Which cadence the user's individual subscription renews on ('month'|'year').
 ensureColumn('users', 'billing_interval', 'TEXT');
+// Lexicon sentiment (server/lib/sentiment.js) for the two free-text fields,
+// scored once at write time so the results page can badge, count, and sort by
+// it. Stores the normalized compound score only; buckets are derived.
+const addedSeqSentiment = ensureColumn('sessions', 'seq_comment_sentiment', 'REAL');
+const addedNotesSentiment = ensureColumn('sessions', 'notes_sentiment', 'REAL');
+if (addedSeqSentiment || addedNotesSentiment) {
+  // One-time pass so tests that already collected feedback aren't half-blank.
+  // Required here rather than at the top: a warm database never pays to load
+  // the lexicon at boot.
+  const { score } = require('./lib/sentiment');
+  const rows = db
+    .prepare('SELECT id, seq_comment, notes FROM sessions WHERE seq_comment IS NOT NULL OR notes IS NOT NULL')
+    .all();
+  const upd = db.prepare(
+    'UPDATE sessions SET seq_comment_sentiment = ?, notes_sentiment = ? WHERE id = ?'
+  );
+  db.transaction(() => {
+    for (const r of rows) upd.run(score(r.seq_comment), score(r.notes), r.id);
+  })();
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_tests_user ON tests(user_id)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_tests_team ON tests(team_id)');
 

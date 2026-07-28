@@ -124,6 +124,17 @@ function appRootFor(entryPath) {
   return dir === '.' ? '' : dir;
 }
 
+// The slice of a repo a picked start page hosts, and therefore the root the
+// artifact is pulled at: an HTML entry hosts its own folder, a module entry
+// hosts its app root. Test creation and the create-form preview must agree on
+// this — a preview rooted higher than the test serves root-absolute asset URLs
+// (href="/style.css") one directory off, and the page renders unstyled.
+function entryRepoRoot(entryFile) {
+  if (!entryFile) return '';
+  if (isModuleEntry(entryFile)) return appRootFor(entryFile);
+  return entryFile.includes('/') ? entryFile.slice(0, entryFile.lastIndexOf('/')) : '';
+}
+
 // Path shape alone is not proof of a browser app — a Node server's
 // src/index.js matches the same convention. Only mount a module when its app
 // root actually depends on a UI framework; a JSX extension is accepted as
@@ -468,6 +479,40 @@ function injectIntoHtml(html, { mountPrefix, headScript, injectScript } = {}) {
   return html;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// A hosted slice is a folder, not a whole app: a nav link or button can point
+// at a route that lives outside it (an app's /auth/github handler, say, which
+// is server code the artifact never contained). Bare "Not found" text reads to
+// a tester as "the prototype is broken" and they give up or report a false
+// failure — so say plainly that the destination is outside the test and give
+// them a way back into it.
+function notFoundPage(rel) {
+  return (
+    '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Not part of this test</title></head>' +
+    '<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;' +
+    'font:15px/1.6 system-ui,-apple-system,\'Segoe UI\',sans-serif;color:#1c1c22;background:#f7f7f9">' +
+    '<div style="max-width:26rem;padding:32px;text-align:center">' +
+    '<div style="font-size:28px;line-height:1;margin-bottom:14px" aria-hidden="true">◱</div>' +
+    '<h1 style="margin:0 0 10px;font-size:19px;font-weight:600">This page isn\'t part of the test</h1>' +
+    '<p style="margin:0 0 6px;color:#55555f">' +
+    'You\'ve followed a link out of the screens being tested. Nothing is broken — ' +
+    'this part of the app just wasn\'t included.</p>' +
+    '<p style="margin:0 0 22px;color:#8a8a95;font:12px/1.5 ui-monospace,monospace;word-break:break-all">' +
+    '/' + escapeHtml(rel) + '</p>' +
+    // --cta, inlined: this page is standalone and never loads style.css.
+    '<button onclick="history.back()" style="font:inherit;font-weight:500;color:#fff;background:#14142e;' +
+    'border:0;border-radius:8px;padding:10px 20px;cursor:pointer">&#8592; Go back</button>' +
+    '</div></body></html>'
+  );
+}
+
 // Serve an artifact file; HTML pages go through injectIntoHtml, and
 // JS-family files are transpiled for native module loading.
 function serveArtifactFile(res, testId, relPath, injectScript, headScript, mountPrefix) {
@@ -484,6 +529,15 @@ function serveArtifactFile(res, testId, relPath, injectScript, headScript, mount
     if (canTranspile(ext)) {
       res.setHeader('Content-Type', MIME[ext]);
       return res.send(diagnosticModule(missingFileMessage(rel)));
+    }
+    // Navigations (extensionless routes and .html) get the explainer page,
+    // carrying the mode's usual injection so the recorder keeps running and
+    // the walk back into the slice stays in the replay. Assets keep the bare
+    // 404 — a missing image or stylesheet must never resolve to HTML.
+    if (!ext || ext === '.html' || ext === '.htm') {
+      res.status(404).setHeader('Content-Type', MIME['.html']);
+      const shown = rel === '.' ? 'index.html' : rel;
+      return res.send(injectIntoHtml(notFoundPage(shown), { mountPrefix, headScript, injectScript }));
     }
     return res.status(404).send('Not found');
   }
@@ -512,6 +566,7 @@ module.exports = {
   ensureEntry,
   isModuleEntry,
   appRootFor,
+  entryRepoRoot,
   uiModuleOk,
   writeEntryWrapper,
   MODULE_ENTRY_RE,

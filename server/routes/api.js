@@ -11,9 +11,10 @@ const { deleteTestData } = require('../lib/purge');
 const { uploadLimiter } = require('../lib/ratelimit');
 const { signalsFor, validateSignals } = require('../lib/signals');
 const { groupPages } = require('../lib/screens');
+const { label: sentimentLabel } = require('../lib/sentiment');
 const {
   artifactRoot, ingestHtml, ingestZip, ingestFiles, listHtmlFiles,
-  ensureEntry, isModuleEntry, appRootFor, uiModuleOk, writeEntryWrapper,
+  ensureEntry, isModuleEntry, entryRepoRoot, uiModuleOk, writeEntryWrapper,
 } = require('../lib/artifacts');
 const { pullRepo } = require('../lib/github');
 const { validateMocks, cleanMocks, mocksFor, suggestApiCalls } = require('../lib/mocks');
@@ -99,9 +100,7 @@ router.post('/api/tests', uploadLimiter, upload.any(), async (req, res) => {
       // folder) is the legacy/advanced form of the same thing.
       const entryFile = (req.body.entry || '').trim().replace(/^\/+/, '');
       const repoPath = entryFile
-        ? (isModuleEntry(entryFile)
-            ? appRootFor(entryFile)
-            : (entryFile.includes('/') ? entryFile.slice(0, entryFile.lastIndexOf('/')) : ''))
+        ? entryRepoRoot(entryFile)
         : (req.body.path || '').trim().replace(/^\/+|\/+$/g, '');
       await pullRepo(id, req.user.github_token, repo, branch, repoPath, maxBytes);
       repoCols = { full_name: repo, branch, path: repoPath, synced_at: Date.now() };
@@ -407,12 +406,25 @@ function buildResults(t) {
       seqCount: seqScores.length,
       signals: signalMetrics,
     },
+    // `sentiment` is the raw compound (sortable); `sentimentLabel` is the
+    // bucket the results page badges. Null on rows that predate scoring.
     comments: completed
       .filter((s) => s.seq_comment)
-      .map((s) => ({ sessionId: s.id, score: s.seq_score, comment: s.seq_comment })),
+      .map((s) => ({
+        sessionId: s.id,
+        score: s.seq_score,
+        comment: s.seq_comment,
+        sentiment: s.seq_comment_sentiment,
+        sentimentLabel: sentimentLabel(s.seq_comment_sentiment),
+      })),
     notes: completed
       .filter((s) => s.notes)
-      .map((s) => ({ sessionId: s.id, note: s.notes })),
+      .map((s) => ({
+        sessionId: s.id,
+        note: s.notes,
+        sentiment: s.notes_sentiment,
+        sentimentLabel: sentimentLabel(s.notes_sentiment),
+      })),
     sessions: sessions.map((s) => ({
       id: s.id,
       status: s.status,
@@ -422,7 +434,9 @@ function buildResults(t) {
       durationMs: s.duration_ms,
       seqScore: s.seq_score,
       seqComment: s.seq_comment,
+      seqCommentSentiment: s.seq_comment_sentiment,
       notes: s.notes,
+      notesSentiment: s.notes_sentiment,
       screenerAnswer: s.screener_answer,
       interactionCount: s.interaction_count,
       discardReason: s.discard_reason,
@@ -445,7 +459,8 @@ router.get('/api/tests/:id/export.csv', ownedTest, (req, res) => {
   const { sessions } = buildResults(req.test);
   const cols = [
     'id', 'status', 'success', 'gaveUp', 'startedAt', 'durationMs',
-    'seqScore', 'seqComment', 'notes', 'screenerAnswer', 'interactionCount', 'discardReason',
+    'seqScore', 'seqComment', 'seqCommentSentiment', 'notes', 'notesSentiment',
+    'screenerAnswer', 'interactionCount', 'discardReason',
   ];
   const cell = (v) => {
     if (v === null || v === undefined) return '';

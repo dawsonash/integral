@@ -28,8 +28,12 @@ function repoZip(version) {
     `<!DOCTYPE html><html><head><title>root</title></head><body><img src="/logo.png"><h1>root v${version}</h1><script>fetch('/api/rsvp')</script></body></html>`
   ));
   zip.addFile(p + 'README.md', Buffer.from('# site'));
-  zip.addFile(p + 'dist/index.html', Buffer.from(`<!DOCTYPE html><html><body><h1>dist v${version}</h1></body></html>`));
-  zip.addFile(p + 'dist/app.css', Buffer.from('body{}'));
+  // Root-absolute stylesheet: dist/ is this page's site root, so /app.css
+  // means dist/app.css — the shape that must survive both hosting paths.
+  zip.addFile(p + 'dist/index.html', Buffer.from(
+    `<!DOCTYPE html><html><head><link rel="stylesheet" href="/app.css"></head><body><h1>dist v${version}</h1></body></html>`
+  ));
+  zip.addFile(p + 'dist/app.css', Buffer.from('body{color:blue}'));
   zip.addFile(p + '.github/workflows/ci.yml', Buffer.from('name: ci'));
   // An unbuilt React app alongside the static pages.
   zip.addFile(p + 'package.json', Buffer.from(JSON.stringify({
@@ -315,11 +319,20 @@ test('preview endpoint hosts a branch snapshot that renders React entries', asyn
   assert.ok(!mod.includes('<App'), 'JSX must be compiled away');
   const app = await (await fetch(base + `/p/${j.id}/src/App.jsx`)).text();
   assert.match(app, /esm\.sh\/react@%5E18\.3\.1\/jsx-runtime/);
-  // Same repo+ref: an HTML entry reuses the snapshot and serves it directly.
+  // An entry in another folder re-roots the snapshot at that folder, exactly
+  // like the test it previews — so the page is served from the root, not
+  // under dist/.
   const j2 = await (await post('dist/index.html')).json();
-  assert.equal(j2.id, j.id);
-  assert.equal(j2.path, 'dist/index.html');
-  assert.match(await (await fetch(base + `/p/${j.id}/dist/index.html`)).text(), /dist v1/);
+  assert.equal(j2.path, 'index.html');
+  const dist = await (await fetch(base + `/p/${j2.id}/${j2.path}`)).text();
+  assert.match(dist, /dist v1/);
+  // The whole point of re-rooting: href="/app.css" is rebased onto the mount
+  // and resolves to dist/app.css, so the preview renders styled.
+  assert.ok(dist.includes(`href="/p/${j2.id}/app.css"`));
+  const css = await fetch(base + `/p/${j2.id}/app.css`);
+  assert.equal(css.status, 200);
+  assert.equal(css.headers.get('content-type'), 'text/css; charset=utf-8');
+  assert.match(await css.text(), /color:blue/);
 });
 
 test('a React entry module becomes a start page with a synthesized wrapper', async () => {
@@ -453,6 +466,26 @@ test('boot failures name the cause and give fix steps', async () => {
   assert.match(body, /How to fix/);
   // Non-module paths still 404 normally.
   assert.equal((await fetch(base + `/t/${t.id}/app/src/Nope.css`)).status, 404);
+});
+
+test('a navigation out of the hosted slice explains itself instead of "Not found"', async () => {
+  const { json: t } = await createRepoTest({ name: 'Dead end', repo: 'owner/site', branch: 'main', entry: 'index.html' });
+  // A link to a route the app serves from code the artifact never contained.
+  const res = await fetch(base + `/t/${t.id}/app/auth/github`);
+  assert.equal(res.status, 404, 'still a 404 on the wire');
+  assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8');
+  const page = await res.text();
+  assert.match(page, /isn't part of the test/);
+  assert.match(page, /auth\/github/);
+  assert.match(page, /history\.back\(\)/);
+  // Carries the mode's injection, so the session keeps recording on the dead
+  // end and the walk back shows up in the replay.
+  assert.match(page, /__integral\/recorder\.js/);
+  // Assets are not navigations: a missing image stays the bare 404, never the
+  // explainer page — an <img> or <link> must not resolve to a document.
+  const asset = await fetch(base + `/t/${t.id}/app/logo.png`);
+  assert.equal(asset.status, 404);
+  assert.equal(await asset.text(), 'Not found');
 });
 
 test('picking an entry file hosts its folder and starts on that page', async () => {

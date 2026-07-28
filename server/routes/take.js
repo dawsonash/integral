@@ -9,6 +9,7 @@ const { isServerTest } = require('../lib/sandbox/classify');
 const sandboxes = require('../lib/sandbox/registry');
 const { proxyRequest, sandboxErrorPage } = require('../lib/sandbox/proxy');
 const { signalsFor } = require('../lib/signals');
+const sentiment = require('../lib/sentiment');
 const { planFor, scopeFor, monthStart } = require('../lib/plans');
 const { sendEmail } = require('../lib/email');
 const { sessionLimiter, ingestLimiter, reportLimiter } = require('../lib/ratelimit');
@@ -315,9 +316,9 @@ router.post('/api/take/:testId/sessions/:sessionId/seq', getSession, (req, res) 
   const score = Number(req.body?.score);
   const comment = String(req.body?.comment || '').slice(0, 2000);
   if (score >= 1 && score <= 7) {
-    db.prepare('UPDATE sessions SET seq_score = ?, seq_comment = ? WHERE id = ?').run(
-      score, comment, req.session.id
-    );
+    db.prepare(
+      'UPDATE sessions SET seq_score = ?, seq_comment = ?, seq_comment_sentiment = ? WHERE id = ?'
+    ).run(score, comment, sentiment.score(comment), req.session.id);
   }
   res.json({ ok: true });
 });
@@ -326,7 +327,9 @@ router.post('/api/take/:testId/sessions/:sessionId/seq', getSession, (req, res) 
 router.post('/api/take/:testId/sessions/:sessionId/notes', getSession, (req, res) => {
   const notes = String(req.body?.notes || '').slice(0, 2000).trim();
   if (notes) {
-    db.prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(notes, req.session.id);
+    db.prepare('UPDATE sessions SET notes = ?, notes_sentiment = ? WHERE id = ?').run(
+      notes, sentiment.score(notes), req.session.id
+    );
   }
   res.json({ ok: true });
 });

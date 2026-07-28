@@ -5,7 +5,7 @@ const { requireUser, githubConfigured } = require('../lib/auth');
 const { planFor } = require('../lib/plans');
 const { uploadLimiter } = require('../lib/ratelimit');
 const { listRepos, listHtmlPaths, pullRepo } = require('../lib/github');
-const { artifactRoot, isModuleEntry, appRootFor, uiModuleOk, writeEntryWrapper } = require('../lib/artifacts');
+const { artifactRoot, isModuleEntry, entryRepoRoot, uiModuleOk, writeEntryWrapper } = require('../lib/artifacts');
 const { newId } = require('../lib/util');
 const path = require('path');
 
@@ -53,8 +53,13 @@ router.get('/api/github/tree', requireUser, requireToken, async (req, res) => {
 // on the run host (no cookies there), so the id is the whole capability,
 // exactly like a test link. One live preview per user; the retention sweep
 // removes any preview dir a restart orphans (no test row → orphan).
+//
+// Rooted at entryRepoRoot(entry), exactly like the test this previews: the
+// entry's folder is the hosted site, so href="/style.css" on a page in
+// public/ resolves to public/style.css. Switching to an entry in another
+// folder re-pulls at that root.
 
-const previews = new Map(); // user id → { id, repo, ref, wrappers: Map(entry → path) }
+const previews = new Map(); // user id → { id, repo, ref, root, wrappers: Map(entry → path) }
 
 router.post('/api/github/preview', uploadLimiter, requireUser, requireToken, async (req, res) => {
   const repo = String(req.body?.repo || '');
@@ -64,12 +69,14 @@ router.post('/api/github/preview', uploadLimiter, requireUser, requireToken, asy
     return res.status(400).json({ error: 'bad_entry', message: 'Pick a start page to preview.' });
   }
   const maxBytes = planFor(req.user).artifactBytes;
+  const root = entryRepoRoot(entry);
   let p = previews.get(req.user.id);
   try {
-    if (!p || p.repo !== repo || p.ref !== ref || !fs.existsSync(artifactRoot('preview-' + p.id))) {
+    if (!p || p.repo !== repo || p.ref !== ref || p.root !== root ||
+        !fs.existsSync(artifactRoot('preview-' + p.id))) {
       if (p) fs.rmSync(artifactRoot('preview-' + p.id), { recursive: true, force: true });
-      p = { id: newId(16), repo, ref, wrappers: new Map() };
-      await pullRepo('preview-' + p.id, req.user.github_token, repo, ref, '', maxBytes);
+      p = { id: newId(16), repo, ref, root, wrappers: new Map() };
+      await pullRepo('preview-' + p.id, req.user.github_token, repo, ref, root, maxBytes);
       previews.set(req.user.id, p);
     }
   } catch (e) {
@@ -81,23 +88,22 @@ router.post('/api/github/preview', uploadLimiter, requireUser, requireToken, asy
     }
     return res.status(e.status === 404 ? 404 : 400).json({ error: 'github_error', message: e.message });
   }
-  let pagePath = entry;
+  // Paths are relative to the pulled root, which is what /p/:id/… serves.
+  const rel = root ? entry.slice(root.length + 1) : entry;
+  let pagePath = rel;
   if (isModuleEntry(entry)) {
     // Module entries need a host page; synthesize one per previewed entry.
     // Same uiModuleOk gate as test creation — a Node server's src/index.js
     // is not a browser app.
     pagePath = p.wrappers.get(entry);
     if (!pagePath) {
-      const appRoot = appRootFor(entry);
-      const moduleRel = appRoot ? entry.slice(appRoot.length + 1) : entry;
-      if (!uiModuleOk(path.join(artifactRoot('preview-' + p.id), appRoot), moduleRel)) {
+      if (!uiModuleOk(artifactRoot('preview-' + p.id), rel)) {
         return res.status(400).json({
           error: 'not_ui_module',
           message: 'This module is not a hostable app entry (its package.json has no React, Preact, or Ink dependency).',
         });
       }
-      const name = writeEntryWrapper(path.join(artifactRoot('preview-' + p.id), appRoot), moduleRel);
-      pagePath = appRoot ? `${appRoot}/${name}` : name;
+      pagePath = writeEntryWrapper(artifactRoot('preview-' + p.id), rel);
       p.wrappers.set(entry, pagePath);
     }
   }

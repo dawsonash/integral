@@ -84,6 +84,82 @@
     bars('timechart', counts, labels, labels.map(function (l, i) { return counts[i] + ' session(s) ' + l; }));
   }
 
+  // ---------- free-text feedback (SEQ comments + post-test notes) ----------
+
+  var SENT_LABELS = ['negative', 'neutral', 'positive'];
+
+  function sentBadge(label) {
+    return label ? '<span class="badge ' + label + '">' + label + '</span>' : '';
+  }
+
+  // A distribution bar over the scored feedback, then the counts under it.
+  function sentRollup(items) {
+    var counts = { negative: 0, neutral: 0, positive: 0 };
+    var scored = 0;
+    items.forEach(function (i) {
+      if (i.sentimentLabel) { counts[i.sentimentLabel]++; scored++; }
+    });
+    if (!scored) return '';
+    var segs = SENT_LABELS.filter(function (l) { return counts[l]; }).map(function (l) {
+      return '<span class="seg-' + l + '" style="width:' + (counts[l] / scored * 100) + '%"></span>';
+    }).join('');
+    var legend = SENT_LABELS.map(function (l) { return counts[l] + ' ' + l; }).join(' · ');
+    return '<div class="sentbar">' + segs + '</div>' +
+      '<p class="muted sentlegend">' + legend + '</p>';
+  }
+
+  // Comments and notes render identically apart from the byline, so one
+  // renderer drives both cards — and re-runs on filter/sort without refetching.
+  function renderFeedback(cfg) {
+    var items = data[cfg.key];
+    $(cfg.ctl).style.display = items.length ? '' : 'none';
+    $(cfg.roll).innerHTML = sentRollup(items);
+
+    var want = $(cfg.filter).value;
+    var shown = want === 'all' ? items.slice() : items.filter(function (i) {
+      return i.sentimentLabel === want;
+    });
+
+    var order = $(cfg.sort).value;
+    if (order !== 'received') {
+      var dir = order === 'negfirst' ? 1 : -1;
+      // Unscored comments hold no opinion — park them at the end either way.
+      shown.sort(function (a, b) {
+        if (a.sentiment == null) return b.sentiment == null ? 0 : 1;
+        if (b.sentiment == null) return -1;
+        return (a.sentiment - b.sentiment) * dir;
+      });
+    }
+
+    if (!shown.length) {
+      $(cfg.host).innerHTML = '<p class="muted">' +
+        (items.length ? 'No ' + want + ' ' + cfg.noun + '.' : 'No ' + cfg.noun + ' yet.') +
+        '</p>';
+      return;
+    }
+    $(cfg.host).innerHTML = shown.map(function (i) {
+      return '<div class="comment' + (i.sentimentLabel ? ' ' + i.sentimentLabel : '') + '">' +
+        '“' + esc(cfg.text(i)) + '”' +
+        '<div class="who">' + sentBadge(i.sentimentLabel) +
+        '<span>' + cfg.byline(i) + '</span></div></div>';
+    }).join('');
+  }
+
+  var COMMENTS = {
+    key: 'comments', host: 'comments', ctl: 'commentctl', roll: 'commentroll',
+    filter: 'commentfilter', sort: 'commentsort', noun: 'comments',
+    text: function (c) { return c.comment; },
+    byline: function (c) {
+      return 'SEQ ' + (c.score || '—') + '/7 · session ' + esc(c.sessionId.slice(0, 6));
+    },
+  };
+  var NOTES = {
+    key: 'notes', host: 'notes', ctl: 'notectl', roll: 'noteroll',
+    filter: 'notefilter', sort: 'notesort', noun: 'notes',
+    text: function (n) { return n.note; },
+    byline: function (n) { return 'session ' + esc(n.sessionId.slice(0, 6)); },
+  };
+
   function render() {
     var m = data.metrics;
     var t = data.test;
@@ -109,19 +185,17 @@
       m.seqDist.map(function (v, i) { return v + ' rated ' + (i + 1); }));
 
     // Comments
-    if (data.comments.length) {
-      $('comments').innerHTML = data.comments.map(function (c) {
-        return '<div class="comment">“' + esc(c.comment) + '”<div class="who">SEQ ' + (c.score || '—') + '/7 · session ' + c.sessionId.slice(0, 6) + '</div></div>';
-      }).join('');
-    }
+    if (data.comments.length) renderFeedback(COMMENTS);
+    $('commentfilter').onchange = function () { renderFeedback(COMMENTS); };
+    $('commentsort').onchange = function () { renderFeedback(COMMENTS); };
 
     // Post-test notes
     if (data.notes.length) {
       $('notescard').style.display = '';
-      $('notes').innerHTML = data.notes.map(function (n) {
-        return '<div class="comment">“' + esc(n.note) + '”<div class="who">session ' + n.sessionId.slice(0, 6) + '</div></div>';
-      }).join('');
+      renderFeedback(NOTES);
     }
+    $('notefilter').onchange = function () { renderFeedback(NOTES); };
+    $('notesort').onchange = function () { renderFeedback(NOTES); };
 
     // Sessions table
     var tbody = document.querySelector('#sessions tbody');
@@ -175,7 +249,7 @@
         $('playerview').innerHTML = '';
         replayer = new rrweb.Replayer(j.events, {
           root: $('playerview'),
-          mouseTail: { strokeStyle: '#5a5bd6' },
+          mouseTail: { strokeStyle: '#c2410c' },
           speed: 1,
         });
         var meta = j.events.find(function (e) { return e.type === 4; });

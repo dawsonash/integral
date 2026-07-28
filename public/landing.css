@@ -42,7 +42,8 @@
   width: 100%;
   max-width: 480px;
   aspect-ratio: 520 / 372;
-  margin: 4px auto 44px;
+  /* Bottom margin clears the deepest card in the stack (52px of offset). */
+  margin: 4px auto 60px;
 }
 .stack-card {
   position: absolute;
@@ -57,13 +58,16 @@
   cursor: pointer;
   transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease;
 }
-.stack-card.depth-0 { transform: translate(0, 0) scale(1); opacity: 1; z-index: 3; }
-.stack-card.depth-1 { transform: translate(0, 18px) scale(0.96); opacity: 0.85; z-index: 2; }
-.stack-card.depth-2 { transform: translate(0, 36px) scale(0.92); opacity: 0.65; z-index: 1; }
+/* One rule per card in the stack — the shuffle script derives its depth
+   classes from the card count, so a new card needs a new .depth-N here. */
+.stack-card.depth-0 { transform: translate(0, 0) scale(1); opacity: 1; z-index: 4; }
+.stack-card.depth-1 { transform: translate(0, 18px) scale(0.96); opacity: 0.85; z-index: 3; }
+.stack-card.depth-2 { transform: translate(0, 36px) scale(0.92); opacity: 0.65; z-index: 2; }
+.stack-card.depth-3 { transform: translate(0, 52px) scale(0.885); opacity: 0.5; z-index: 1; }
 .stack-card.depth-out {
   transform: translate(0, -60px) scale(1.02);
   opacity: 0;
-  z-index: 4;
+  z-index: 5;
   transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s ease-in;
 }
 
@@ -98,11 +102,9 @@
   padding: 4px 9px;
   border-radius: 99px;
   color: #fff;
+  background: #111827;
   white-space: nowrap;
 }
-.badge-heatmap { background: linear-gradient(90deg, #f59e0b, #dc2626); }
-.badge-replay { background: var(--accent); }
-.badge-graph { background: #111827; }
 
 .stack-body {
   position: relative;
@@ -125,6 +127,10 @@
   0% { background-position: 120% 0; }
   100% { background-position: -20% 0; }
 }
+/* Skeletons that sit on the dark player bar rather than a white card.
+   background-image, not the background shorthand — the shorthand would reset
+   the background-size that drives the shimmer. */
+.skel-dark { background-image: linear-gradient(100deg, #3a3a55 30%, #4d4d6b 45%, #3a3a55 60%); }
 .skel-title { width: 46%; height: 14px; }
 .skel-line { height: 8px; }
 .w-80 { width: 80%; }
@@ -135,7 +141,7 @@
 .w-55 { width: 55%; }
 .skel-btn { height: 22px; width: 70%; border-radius: 6px; margin-top: auto; }
 .skel-btn.accent {
-  background: linear-gradient(100deg, #4f46e5 40%, #6a63ec 55%, #4f46e5 70%);
+  background: linear-gradient(100deg, #c2410c 40%, #e05a1e 55%, #c2410c 70%);
   background-size: 250% 100%;
   animation: shimmer 2.2s ease-in-out infinite;
 }
@@ -157,7 +163,9 @@
 .heat-glow { position: absolute; border-radius: 50%; filter: blur(2px); pointer-events: none; }
 .heat-hot { width: 90px; height: 90px; left: 4px; bottom: -18px; background: radial-gradient(circle, rgba(220, 38, 38, 0.75) 0%, rgba(245, 158, 11, 0.45) 45%, rgba(245, 158, 11, 0) 75%); }
 .heat-warm { width: 60px; height: 60px; left: 40px; bottom: -6px; background: radial-gradient(circle, rgba(250, 204, 21, 0.55), rgba(250, 204, 21, 0) 70%); }
-.heat-cool { width: 64px; height: 64px; right: 10px; bottom: -14px; background: radial-gradient(circle, rgba(79, 70, 229, 0.35), rgba(79, 70, 229, 0) 70%); }
+/* Blue, not the brand orange — this is the cold end of the heat scale and has
+   to stay legibly opposite the hot/warm glows in the panel beside it. */
+.heat-cool { width: 64px; height: 64px; right: 10px; bottom: -14px; background: radial-gradient(circle, rgba(59, 130, 246, 0.35), rgba(59, 130, 246, 0) 70%); }
 
 .stack-player {
   display: flex;
@@ -171,7 +179,7 @@
 .player-play { color: #fff; font-size: 11px; }
 .player-track { position: relative; flex: 1; height: 5px; background: #3a3a55; border-radius: 3px; }
 .player-fill { position: absolute; inset: 0; width: 58%; background: var(--accent); border-radius: 3px; }
-.replay-fill { background: #8b85f0; width: 41%; }
+.replay-fill { background: #f08a5d; width: 41%; }
 .player-tick { position: absolute; top: -5px; width: 2px; height: 14px; background: #16a34a; border-radius: 1px; }
 .player-tick.tick-warn { background: #f59e0b; }
 .player-thumb {
@@ -185,7 +193,8 @@
   transform: translateY(-50%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
-.player-time { color: #9ca3af; font-family: ui-monospace, monospace; font-size: 11px; }
+/* Empty skeleton standing in for the timestamp — sized to the "0:00" it replaced. */
+.player-time { flex-shrink: 0; width: 26px; height: 8px; border-radius: 3px; }
 
 /* replay card */
 .rec-pill {
@@ -196,13 +205,11 @@
   align-items: center;
   gap: 5px;
   background: rgba(220, 38, 38, 0.08);
-  color: #dc2626;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 3px 9px;
+  padding: 5px 9px;
   border-radius: 99px;
 }
+/* Stands in for the "REC" wordmark; the pulsing dot beside it carries the meaning. */
+.rec-skel { width: 22px; height: 6px; border-radius: 3px; }
 .rec-dot { width: 6px; height: 6px; border-radius: 50%; background: #dc2626; animation: recpulse 1.4s ease-in-out infinite; }
 @keyframes recpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
@@ -241,6 +248,47 @@
 .skel-num { width: 46px; height: 16px; }
 .skel-label { width: 70%; height: 7px; }
 
+/* sentiment card — the pill colours are the results page's own sentiment
+   buckets (style.css .badge.positive/.negative) so the mock matches the app. */
+.sent-rollup { display: flex; gap: 3px; height: 8px; flex-shrink: 0; }
+.roll-seg { border-radius: 99px; }
+.seg-negative { background: #f87171; }
+.seg-neutral { background: #d5d8dd; }
+.seg-positive { background: #4ade80; }
+.sent-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* Both are empty skeletons now, so they carry their own dimensions. */
+.sent-legend { flex-shrink: 0; width: 108px; height: 7px; }
+.sent-chip {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 76px;
+  height: 14px;
+  border-radius: 99px;
+}
+/* space-between so the three rows fill the card at any hero size, the way the
+   other cards' stages stretch. */
+.sent-feed { display: flex; flex-direction: column; justify-content: space-between; gap: 8px; flex: 1; min-height: 0; }
+.sent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 8px;
+  background: #f6f7f9;
+}
+.sent-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.sent-pill {
+  flex-shrink: 0;
+  width: 52px;
+  height: 14px;
+  border-radius: 99px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stack-card, .stack-card.depth-out, .skel, .skel-btn.accent, .chart-bars span, .rec-dot, .replay-path path {
     animation: none !important;
@@ -261,6 +309,10 @@
 .lsection-alt h2 { margin-bottom: 28px; }
 
 .lgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+/* Even rows for feature counts that aren't a multiple of three. Same
+   specificity as .lgrid and later in the file, so it wins at desktop while the
+   860px collapse below still overrides both. */
+.lgrid-2 { grid-template-columns: repeat(2, 1fr); }
 .lfeature { margin: 0; }
 .lfeature h3 { font-size: 16px; margin: 0 0 8px; }
 .lfeature .muted { font-size: 14px; }
@@ -344,10 +396,6 @@
 .lgrid.pricing { grid-template-columns: repeat(3, minmax(0, 320px)); justify-content: center; }
 .price-card { position: relative; margin: 0; padding: 26px; display: flex; flex-direction: column; }
 .price-card h3 { font-size: 17px; margin: 0 0 4px; }
-/* Lifted out of the flow so the featured card's heading, price, and feature
-   list still line up with the cards that carry no badge. */
-.price-card .badge { position: absolute; top: 22px; right: 22px; background: var(--accent); color: var(--accent-ink); }
-.price-card.featured { border-color: var(--accent); box-shadow: 0 8px 28px rgba(79, 70, 229, 0.12); }
 .price { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
 .price .muted { font-size: 14px; font-weight: 500; }
 /* The "+ $10 / teammate" half of the Team price: its own line, sized down so
@@ -406,25 +454,111 @@
   font-size: 17px;
 }
 
-.lfooter {
+/* Seek bar. Hidden until the tour has been started once — before that the
+   poster and the big play button are the whole interface. After that it owns
+   play/pause, so pausing no longer re-covers the frame with the overlay. */
+.demo-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  max-width: 1060px;
-  margin: 0 auto;
-  padding: 28px 24px 40px;
-  border-top: 1px solid var(--line);
-  font-size: 14px;
+  gap: 12px;
+  padding: 26px 16px 12px;
+  background: linear-gradient(to top, rgba(20, 20, 46, 0.8), rgba(20, 20, 46, 0));
+  line-height: 1;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
 }
-.lfooter .brand { font-weight: 700; text-decoration: none; color: var(--ink); }
-.lfooter .brand span { color: var(--accent); }
-.lfooter a { color: var(--muted); }
+/* Once started the bar stays in the tab order even while faded out, so
+   :focus-within below can bring it back. visibility:hidden would drop it out
+   of the tab order and a keyboard user could never reveal it. Faded state
+   keeps pointer-events off so clicking the bottom strip toggles the video. */
+.demo-bar.is-on { visibility: visible; }
+/* Show it only while the pointer is in the frame, keyboard focus is in the
+   bar, or playback is paused — otherwise the chrome stays off the video. */
+.demo-frame:hover .demo-bar.is-on,
+.demo-bar.is-on:focus-within,
+.demo-bar.is-on.is-paused {
+  opacity: 1;
+  pointer-events: auto;
+}
+.demo-bar-play {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  cursor: pointer;
+}
+.demo-track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+.demo-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.demo-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+}
+/* pointer-events off so a drag never lands on the thumb instead of the track. */
+.demo-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(20, 20, 46, 0.5);
+  pointer-events: none;
+}
+.demo-time {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+/* .lfooter lives in style.css — every page carries the same footer. */
 
 @media (max-width: 860px) {
   .hero { grid-template-columns: 1fr; padding-top: 48px; gap: 32px; }
   .hero h1 { font-size: 32px; }
   .lgrid, .steps, .lgrid.pricing { grid-template-columns: 1fr; }
   .lnav-links { display: none; }
-  .card-stack { max-width: 360px; margin-bottom: 56px; }
+  .card-stack { max-width: 360px; margin-bottom: 72px; }
+  /* The stack loses ~100px of height here, and the sentiment rows are the one
+     thing in it that doesn't shrink — so compact them to one line apiece. */
+  .sent-feed { gap: 6px; }
+  .sent-row { padding: 6px 9px; }
+  .sent-lines .skel-line + .skel-line { display: none; }
+  .sent-pill { width: 40px; height: 12px; }
+}
+
+/* The card's height follows its width, so on the narrowest phones it can no
+   longer hold the whole mock. Drop the rollup legend and one of the two
+   negative rows — the pills and the distribution bar still tell the story. */
+@media (max-width: 380px) {
+  .sent-controls { display: none; }
+  .sent-feed .sent-row:nth-child(2) { display: none; }
 }

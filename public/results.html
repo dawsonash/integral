@@ -13,13 +13,13 @@
   .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .barchart { display: flex; align-items: flex-end; gap: 2px; height: 120px; margin-top: 10px; }
   .barchart .bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
-  .barchart .fill { width: 100%; max-width: 44px; background: #5a5bd6; border-radius: 4px 4px 0 0; min-height: 2px; }
+  .barchart .fill { width: 100%; max-width: 44px; background: #c2410c; border-radius: 4px 4px 0 0; min-height: 2px; }
   .barchart .num { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
   .barchart .lbl { font-size: 11px; color: var(--muted); margin-top: 5px; }
   .funnel .frow { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
   .funnel .fname { width: 110px; font-size: 13px; color: var(--muted); text-align: right; }
   .funnel .ftrack { flex: 1; }
-  .funnel .fbar { height: 22px; background: #5a5bd6; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .funnel .fbar { height: 22px; background: #c2410c; border-radius: 0 4px 4px 0; min-width: 2px; }
   .funnel .fval { font-size: 13px; font-weight: 600; width: 90px; }
   #heatwrap { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   #heatstage { position: relative; overflow: hidden; height: 560px; background: #fff; }
@@ -34,10 +34,23 @@
   #playerview .replayer-wrapper { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
   #playerbar { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
   #progresstrack { flex: 1; height: 6px; background: var(--line); border-radius: 3px; cursor: pointer; }
-  #progressfill { height: 100%; width: 0; background: #5a5bd6; border-radius: 3px; }
+  #progressfill { height: 100%; width: 0; background: #c2410c; border-radius: 3px; }
   .speed.sel { background: var(--accent); color: #fff; border-color: var(--accent); }
   .comment { border-left: 3px solid var(--line); padding: 4px 12px; margin: 10px 0; }
-  .comment .who { font-size: 12px; color: var(--muted); }
+  .comment .who { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .comment.negative { border-left-color: #f87171; }
+  .comment.positive { border-left-color: #4ade80; }
+  .sentnote { margin: -6px 0 10px; }
+  .sentctl { margin-bottom: 4px; }
+  .sentroll { margin: 0 0 6px; }
+  /* Distribution of the scored feedback, same bar as the landing page's
+     sentiment card. Zero-count buckets are left out rather than drawn 0-wide. */
+  .sentbar { display: flex; gap: 3px; height: 8px; margin: 6px 0; }
+  .sentbar span { border-radius: 99px; }
+  .sentbar .seg-negative { background: #f87171; }
+  .sentbar .seg-neutral { background: #d5d8dd; }
+  .sentbar .seg-positive { background: #4ade80; }
+  .sentroll .sentlegend { margin: 0; font-size: 13px; }
   .ok { color: var(--ok); font-weight: 700; }
   .bad { color: var(--bad); font-weight: 700; }
 </style>
@@ -90,11 +103,39 @@
 
   <div class="card">
     <h2>Comments</h2>
+    <div class="row sentctl" id="commentctl" style="display:none">
+      <div><label>Show</label><select id="commentfilter">
+        <option value="all">All</option>
+        <option value="negative">Negative only</option>
+        <option value="neutral">Neutral only</option>
+        <option value="positive">Positive only</option>
+      </select></div>
+      <div><label>Order</label><select id="commentsort">
+        <option value="received">Order received</option>
+        <option value="negfirst">Negative first</option>
+        <option value="posfirst">Positive first</option>
+      </select></div>
+    </div>
+    <div class="sentroll" id="commentroll"></div>
     <div id="comments"><p class="muted">No comments yet.</p></div>
   </div>
 
   <div class="card" id="notescard" style="display:none">
     <h2>Post-test notes</h2>
+    <div class="row sentctl" id="notectl" style="display:none">
+      <div><label>Show</label><select id="notefilter">
+        <option value="all">All</option>
+        <option value="negative">Negative only</option>
+        <option value="neutral">Neutral only</option>
+        <option value="positive">Positive only</option>
+      </select></div>
+      <div><label>Order</label><select id="notesort">
+        <option value="received">Order received</option>
+        <option value="negfirst">Negative first</option>
+        <option value="posfirst">Positive first</option>
+      </select></div>
+    </div>
+    <div class="sentroll" id="noteroll"></div>
     <div id="notes"></div>
   </div>
 
@@ -105,6 +146,14 @@
     </tr></thead><tbody></tbody></table>
   </div>
 </div>
+
+<footer class="lfooter">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
+  <span style="flex:1"></span>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+</footer>
 
 <div id="replaymodal"><div id="replaybox">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">

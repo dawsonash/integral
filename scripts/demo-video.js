@@ -25,7 +25,7 @@ const FPS = 30;
 // Playback is stretched at mux time rather than by driving the browser more
 // slowly: the capture stays quick and deterministic, and the pacing is one
 // number to turn. 1.0 = as recorded.
-const SLOWDOWN = 1.2;
+const SLOWDOWN = 1.4;
 
 // A demo instance must never inherit real OAuth/Stripe/Postgres config: dev
 // login has to be available and billing has to stay off.
@@ -72,7 +72,7 @@ function installOverlay() {
         #__demo-ripple {
           position: absolute; left: 0; top: 0; width: 14px; height: 14px;
           margin: -7px 0 0 -7px; border-radius: 50%;
-          border: 2px solid #4f46e5; background: rgba(79, 70, 229, .18);
+          border: 2px solid #c2410c; background: rgba(194, 65, 12, .18);
           opacity: 0; transform: translate3d(-100px, -100px, 0) scale(1);
         }
         #__demo-ripple.go { animation: __demo-pop .5s ease-out; }
@@ -95,7 +95,7 @@ function installOverlay() {
         #__demo-cap.br { left: auto; right: 28px; }
         #__demo-cap b {
           flex: none; width: 26px; height: 26px; border-radius: 50%;
-          background: #4f46e5; color: #fff; font-size: 14px;
+          background: #c2410c; color: #fff; font-size: 14px;
           display: flex; align-items: center; justify-content: center;
         }
         #__demo-title {
@@ -106,7 +106,11 @@ function installOverlay() {
         }
         #__demo-title.on { opacity: 1; visibility: visible; }
         #__demo-title .mark { font-size: 46px; font-weight: 700; letter-spacing: -0.03em; }
-        #__demo-title .mark span { color: #8b8bf0; }
+        /* --accent (#c2410c) only makes ~3.5:1 on the #14142e title card and
+           goes muddy; orange-300 (#fdba74) clears contrast but is pale enough
+           to read yellow next to the nav's period. orange-500 splits it: ~6.5:1
+           and still unmistakably orange. */
+        #__demo-title .mark span { color: #f97316; }
         #__demo-title .sub { font-size: 21px; color: #b9bad4; max-width: 640px; line-height: 1.45; }
         #__demo-title .foot { font-size: 15px; color: #7f80a3; letter-spacing: .04em; }
       </style>
@@ -551,6 +555,19 @@ async function main() {
   await sleep(400);
   d.beat('results toured');
 
+  // ---- 9. sentiment -----------------------------------------------------
+  // Captions go bottom-right: the comment feed fills the left column here.
+  await d.say(9, 'Every comment is scored — a lexicon, not a model.', 0, 'br');
+  await d.box(page, '#commentroll', { scroll: true });
+  await sleep(2000);
+  await d.say(9, 'So the unhappy ones sort to the top, and you read those first.', 0, 'br');
+  const sortSel = await d.box(page, '#commentsort');
+  await d.moveTo(sortSel.x, sortSel.y, 620);
+  await sleep(350);
+  await page.select('#commentsort', 'negfirst');
+  await sleep(3000);
+  d.beat('sentiment shown');
+
   // ---- outro ------------------------------------------------------------
   await d.hush();
   await page.evaluate(() =>
@@ -634,10 +651,15 @@ async function backgroundSessions(browser, base, testId) {
     await page.close();
   }
 
-  await session({ ua: 'demo-tester-1', succeed: true, seq: 7, comment: 'Dead simple, found it immediately.' });
-  await session({ ua: 'demo-tester-2', succeed: true, seq: 6, wander: true });
-  await session({ ua: 'demo-tester-3', succeed: true, seq: 5, comment: 'Took me a second to spot the cart link.', dwellMs: 2500, wander: true });
-  await session({ ua: 'demo-tester-4', giveUp: true, seq: 2, comment: 'I expected a buy button on the product itself.', dwellMs: 2000, wander: true });
+  // The comments are load-bearing: beat 9 shows the sentiment rollup and the
+  // negative-first sort, so the set needs one of each label. Keep them worded
+  // in vocabulary the lexicon actually carries — "dead simple" reads as a
+  // strong *negative* to VADER ("dead"), which would demo the feature getting
+  // its happiest comment backwards. See server/lib/sentiment.js on the blind spot.
+  await session({ ua: 'demo-tester-1', succeed: true, seq: 7, comment: 'Perfect, the cart was obvious and checkout was easy.' });
+  await session({ ua: 'demo-tester-2', succeed: true, seq: 6, comment: 'Took me a second to spot the cart link.', wander: true });
+  await session({ ua: 'demo-tester-3', succeed: true, seq: 5, comment: 'The cart link is hidden and the whole flow felt awkward.', dwellMs: 2500, wander: true });
+  await session({ ua: 'demo-tester-4', giveUp: true, seq: 2, comment: 'Confusing. I hated hunting for the checkout button.', dwellMs: 2000, wander: true });
 }
 
 function ffmpeg(args) {

@@ -3,3 +3,7 @@ data/
 .env
 *.log
 .DS_Store
+
+# Per-developer Claude Code config. The shared .claude/settings.json is
+# tracked; the .local. variant holds one machine's permission grants.
+.claude/settings.local.json

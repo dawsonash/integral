@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { db } = require('../db');
 const { setSessionCookie, clearSessionCookie, parseCookies } = require('../lib/session');
 const { requireUser, upsertUser, githubConfigured, devLoginEnabled } = require('../lib/auth');
-const { planFor, scopeFor, monthStart } = require('../lib/plans');
+const { planFor, scopeFor, monthStart, graceFor } = require('../lib/plans');
 const { billingConfigured } = require('../lib/prices');
 const teams = require('../lib/teams');
 const { deleteUserData } = require('../lib/purge');
@@ -151,6 +151,10 @@ router.get('/api/me', requireUser, (req, res) => {
       ? { id: team.id, name: team.name, plan: team.plan, role: teams.roleFor(team.id, u.id), seats: teams.memberCount(team.id) }
       : null,
     billingConfigured: billingConfigured(),
+    // When this account's data stops being kept at the paid window, after a
+    // lapsed subscription. Null unless something is actually lapsing. Team
+    // members get their team's clock; the team card renders that one instead.
+    graceEndsAt: graceFor(u),
     limits: {
       // Infinity serializes to null; the dashboard reads null as "no limit".
       activeTests: plan.activeTests,

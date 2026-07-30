@@ -5,29 +5,49 @@
 const fs = require('fs');
 const path = require('path');
 const { db, EVENTS_DIR, ARTIFACTS_DIR } = require('../db');
-const { PLANS, teamPlan } = require('./plans');
+const { PLANS, PAID_PLANS, teamPlan, GRACE_RETENTION, RETENTION_GRACE_DAYS } = require('./plans');
 const { memberCount } = require('./teams');
 const { deleteSessionRows } = require('./purge');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// An account that just stopped paying keeps the paid retention window for the
+// grace period. Losing the volume limits the moment a subscription ends is the
+// plan working; losing the research the same night is not.
+function withinGrace(lapsedAt, now) {
+  return !!lapsedAt && now - lapsedAt < RETENTION_GRACE_DAYS * DAY_MS;
+}
+
+function teamRetentionPlan(team, now) {
+  if (team.plan === 'team') return teamPlan(memberCount(team.id));
+  return withinGrace(team.plan_lapsed_at, now) ? GRACE_RETENTION : PLANS.free;
+}
+
+function personalRetentionPlan(user, now) {
+  if (PAID_PLANS.has(user.plan) || user.plan === 'unlimited') return PLANS[user.plan];
+  return withinGrace(user.plan_lapsed_at, now) ? GRACE_RETENTION : PLANS.free;
+}
+
 // One group per allowance pool, because retention is a property of the plan
 // paying for the data. A team's tests are swept under the team's plan even
 // though each row still records the individual who made it; personal tests are
 // swept under their owner's plan; ownerless (pre-auth) rows get free tier.
-function retentionGroups() {
+function retentionGroups(now) {
   const groups = [];
-  for (const team of db.prepare('SELECT id, plan FROM teams').all()) {
+  for (const team of db.prepare('SELECT id, plan, plan_lapsed_at FROM teams').all()) {
     groups.push({
-      plan: team.plan === 'team' ? teamPlan(memberCount(team.id)) : PLANS.free,
+      plan: teamRetentionPlan(team, now),
       cond: (a) => `${a}team_id = ?`,
       args: [team.id],
     });
   }
   // Anyone not in a team: their rows are the ones with no team_id.
-  for (const u of db.prepare('SELECT id, plan FROM users WHERE id NOT IN (SELECT user_id FROM team_members)').all()) {
+  const solo = db.prepare(
+    'SELECT id, plan, plan_lapsed_at FROM users WHERE id NOT IN (SELECT user_id FROM team_members)'
+  );
+  for (const u of solo.all()) {
     groups.push({
-      plan: PLANS[u.plan] || PLANS.free,
+      plan: personalRetentionPlan(u, now),
       cond: (a) => `${a}user_id = ? AND ${a}team_id IS NULL`,
       args: [u.id],
     });
@@ -39,7 +59,7 @@ function retentionGroups() {
 function sweep(now = Date.now()) {
   const out = { expiredTests: 0, deletedSessions: 0, orphanEventFiles: 0, orphanArtifactDirs: 0 };
 
-  for (const g of retentionGroups()) {
+  for (const g of retentionGroups(now)) {
     const plan = g.plan;
     const ownerArgs = g.args;
 

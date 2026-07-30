@@ -13,6 +13,7 @@ const express = require('express');
 const { db } = require('../db');
 const { requireUser } = require('../lib/auth');
 const { priceId, billingConfigured, normalizeInterval } = require('../lib/prices');
+const { PAID_PLANS } = require('../lib/plans');
 const teams = require('../lib/teams');
 
 const router = express.Router();
@@ -145,12 +146,23 @@ router.post('/api/billing/checkout', express.json(), requireUser, async (req, re
 });
 
 router.post('/api/billing/portal', requireUser, async (req, res) => {
+  // A team owner manages the team's subscription; everyone else manages their own.
+  // Authorization is decided before Stripe config, so who may reach the team's
+  // portal never depends on how this server happens to be set up.
+  const team = teams.teamForUser(req.user.id);
+  const isOwner = team && teams.roleFor(team.id, req.user.id) === 'owner';
+  // Checkout created the team's Stripe customer under the buyer's account, so a
+  // former owner's users.stripe_customer_id still points at it. Falling through
+  // to the personal customer would hand a demoted owner the team's portal.
+  if (team && !isOwner && req.user.stripe_customer_id === team.stripe_customer_id) {
+    return res.status(403).json({
+      error: 'not_team_owner',
+      message: 'Your team owner manages the subscription.',
+    });
+  }
   const s = stripe();
   if (!s) return notConfigured(res);
-  // A team owner manages the team's subscription; everyone else manages their own.
-  const team = teams.teamForUser(req.user.id);
-  const asTeam = team && teams.roleFor(team.id, req.user.id) === 'owner' && team.stripe_customer_id;
-  const customer = asTeam ? team.stripe_customer_id : req.user.stripe_customer_id;
+  const customer = isOwner && team.stripe_customer_id ? team.stripe_customer_id : req.user.stripe_customer_id;
   if (!customer) {
     return res.status(400).json({ error: 'no_customer', message: 'No billing history for this account.' });
   }
@@ -170,9 +182,32 @@ router.post('/api/billing/portal', requireUser, async (req, res) => {
 // Mounted in app.js with express.raw BEFORE the JSON body parser — Stripe
 // signature verification needs the exact raw bytes.
 
-const setPlan = db.prepare('UPDATE users SET plan = ?, stripe_subscription_id = ? WHERE id = ?');
 const byCustomer = db.prepare('SELECT * FROM users WHERE stripe_customer_id = ?');
 const teamBySub = db.prepare('SELECT * FROM teams WHERE stripe_subscription_id = ?');
+
+// Move a team between 'team' and 'free', keeping the retention grace clock
+// honest. The clock is stamped only on the paid→free edge, so a repeated or
+// replayed webhook can't quietly extend the runway, and cleared on the way back
+// up so a team that fixes its card doesn't stay marked as lapsed.
+// past_due still counts as paid upstream, so this only fires once dunning has
+// actually given up.
+function setTeamPlan(team, plan, subscriptionId) {
+  const lapsing = team.plan === 'team' && plan !== 'team';
+  const lapsedAt = lapsing ? Date.now() : plan === 'team' ? null : team.plan_lapsed_at;
+  db.prepare('UPDATE teams SET plan = ?, stripe_subscription_id = ?, plan_lapsed_at = ? WHERE id = ?')
+    .run(plan, subscriptionId, lapsedAt, team.id);
+}
+
+// The individual counterpart, with the same grace-clock rules. 'unlimited' is
+// the internal comp grant and is never moved by billing at all, so the guard
+// that used to sit at each call site lives here instead.
+function setUserPlan(user, plan, subscriptionId) {
+  if (user.plan === 'unlimited') return;
+  const lapsing = PAID_PLANS.has(user.plan) && !PAID_PLANS.has(plan);
+  const lapsedAt = lapsing ? Date.now() : PAID_PLANS.has(plan) ? null : user.plan_lapsed_at;
+  db.prepare('UPDATE users SET plan = ?, stripe_subscription_id = ?, plan_lapsed_at = ? WHERE id = ?')
+    .run(plan, subscriptionId, lapsedAt, user.id);
+}
 
 // A subscription's metadata is set at Checkout and copied forward by Stripe,
 // so it's the reliable way to tell a team subscription from an individual one.
@@ -199,36 +234,40 @@ function webhook(req, res) {
     const interval = (obj.metadata && obj.metadata.integral_interval) === 'year' ? 'year' : 'month';
     const teamId = Number(obj.metadata && obj.metadata.integral_team_id);
     if (teamId) {
+      // plan_lapsed_at clears here too: a lapsed team that re-subscribes through
+      // a fresh Checkout is current again, not mid-grace.
       db.prepare(
-        `UPDATE teams SET plan = 'team', billing_interval = ?, stripe_customer_id = ?, stripe_subscription_id = ?
-         WHERE id = ?`
+        `UPDATE teams SET plan = 'team', billing_interval = ?, stripe_customer_id = ?, stripe_subscription_id = ?,
+         plan_lapsed_at = NULL WHERE id = ?`
       ).run(interval, String(obj.customer), String(obj.subscription), teamId);
       // The seat line item may not exist yet (solo owner at checkout) or may
       // be stale if people were invited while Checkout was open.
       recordSeatItem(String(obj.subscription), teamId);
     } else if (user) {
+      // plan_lapsed_at clears here for the same reason it does on the team
+      // branch: re-subscribing makes you current, not mid-grace.
       db.prepare(
-        'UPDATE users SET plan = ?, billing_interval = ?, stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?'
+        `UPDATE users SET plan = ?, billing_interval = ?, stripe_customer_id = ?, stripe_subscription_id = ?,
+         plan_lapsed_at = NULL WHERE id = ?`
       ).run(plan === 'team' ? 'individual' : plan, interval, String(obj.customer), String(obj.subscription), user.id);
     }
   } else if (event.type === 'customer.subscription.updated') {
     const active = ['active', 'trialing', 'past_due'].includes(obj.status);
     const team = teamForEvent(obj);
     if (team) {
-      db.prepare('UPDATE teams SET plan = ?, stripe_subscription_id = ? WHERE id = ?')
-        .run(active ? 'team' : 'free', obj.id, team.id);
+      setTeamPlan(team, active ? 'team' : 'free', obj.id);
     } else {
       const user = byCustomer.get(String(obj.customer));
-      if (user && user.plan !== 'unlimited') setPlan.run(active ? 'individual' : 'free', obj.id, user.id);
+      if (user) setUserPlan(user, active ? 'individual' : 'free', obj.id);
     }
   } else if (event.type === 'customer.subscription.deleted') {
     const team = teamForEvent(obj);
     if (team) {
-      db.prepare("UPDATE teams SET plan = 'free', stripe_subscription_id = NULL, stripe_seat_item_id = NULL WHERE id = ?")
-        .run(team.id);
+      setTeamPlan(team, 'free', null);
+      db.prepare('UPDATE teams SET stripe_seat_item_id = NULL WHERE id = ?').run(team.id);
     } else {
       const user = byCustomer.get(String(obj.customer));
-      if (user && user.plan !== 'unlimited') setPlan.run('free', null, user.id);
+      if (user) setUserPlan(user, 'free', null);
     }
   }
   res.json({ received: true });
@@ -254,4 +293,4 @@ function recordSeatItem(subscriptionId, teamId) {
     .catch((e) => console.error('[billing] seat item lookup failed:', e.message));
 }
 
-module.exports = { router, webhook, syncSeats, stripe };
+module.exports = { router, webhook, syncSeats, setTeamPlan, setUserPlan, stripe };

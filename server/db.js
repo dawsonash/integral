@@ -160,6 +160,11 @@ ensureColumn('tests', 'backend_config', 'TEXT');
 ensureColumn('tests', 'team_id', 'INTEGER REFERENCES teams(id)');
 // Which cadence the user's individual subscription renews on ('month'|'year').
 ensureColumn('users', 'billing_interval', 'TEXT');
+// When a paid plan fell back to 'free' (cancelled, or dunning gave up). Drives
+// the retention grace window in lib/retention.js; NULL for accounts that never
+// paid and for accounts currently subscribed.
+ensureColumn('teams', 'plan_lapsed_at', 'INTEGER');
+ensureColumn('users', 'plan_lapsed_at', 'INTEGER');
 // Lexicon sentiment (server/lib/sentiment.js) for the two free-text fields,
 // scored once at write time so the results page can badge, count, and sort by
 // it. Stores the normalized compound score only; buckets are derived.

@@ -9,7 +9,6 @@
 <body>
 <div class="topbar">
   <a class="brand" href="/">◱ Integral<span>.</span></a>
-  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
   <span style="flex:1"></span>
   <span id="account" style="display:none;align-items:center;gap:10px">
     <span class="badge" id="planbadge"></span>
@@ -22,6 +21,12 @@
 </div>
 
 <div class="container" id="main" style="display:none">
+  <!-- Lapsed personal subscription. Team members get the equivalent warning
+       inside the team card, on the team's own clock. -->
+  <div class="card" id="lapsedcard" style="display:none">
+    <p id="lapsedbanner" style="color:var(--warn,#b45309);margin:0"></p>
+  </div>
+
   <!-- Plan chooser, opened by the Upgrade button. Prices here must match the
        Stripe prices behind STRIPE_PRICE_* (see docs/go-to-market.md). -->
   <div class="card" id="plans" style="display:none">
@@ -72,8 +77,11 @@
         <th>Pending invite</th><th>Link</th><th></th>
       </tr></thead><tbody></tbody></table>
     </div>
+    <p id="teamlapsed" style="display:none;color:var(--warn,#b45309)"></p>
+    <p class="muted" id="ownerhint" style="display:none">To leave this team, make another
+    member the owner first — you'll stay on as a member afterwards.</p>
     <p class="muted">
-      <a href="#" id="leaveteam">Leave team</a> ·
+      <a href="#" id="leaveteam">Leave team</a>
       <a href="#" id="deleteteam" style="display:none">Delete team</a>
     </p>
   </div>
@@ -144,7 +152,6 @@
 
 <footer class="lfooter">
   <a class="brand" href="/">◱ Integral<span>.</span></a>
-  <span class="muted">Test the slice you just built, in ~2 minutes.</span>
   <span style="flex:1"></span>
   <a href="/privacy">Privacy</a>
   <a href="/terms">Terms</a>

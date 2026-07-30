@@ -26,6 +26,14 @@
     }
     // On a team the pool is shared, so the list isn't "yours" any more.
     document.getElementById('testsheading').textContent = me.team ? me.team.name + ' — tests' : 'Your tests';
+    // Lapsed personal subscription. Team members are warned by the team card on
+    // the team's clock, so this is the solo case only.
+    show('lapsedcard', !!me.graceEndsAt && !me.team);
+    if (me.graceEndsAt && !me.team) {
+      document.getElementById('lapsedbanner').textContent =
+        'Your subscription has ended. Results older than 14 days will start being deleted on ' +
+        fmtDate(me.graceEndsAt) + ' unless you resubscribe.';
+    }
     loadTeam();
     loadRepos();
     loadTests();
@@ -42,7 +50,8 @@
       document.getElementById('teamheading').textContent = t.name;
       document.getElementById('teamsummary').textContent =
         t.seats + (t.seats === 1 ? ' seat' : ' seats') + ' · ' +
-        t.limits.activeTests + ' active tests · ' + t.limits.responsesPerMonth + ' responses / month' +
+        t.limits.activeTests + (t.limits.activeTests === 1 ? ' active test · ' : ' active tests · ') +
+        t.limits.responsesPerMonth + ' responses / month' +
         (t.role === 'owner' && t.plan === 'team'
           ? ' · billed ' + (t.billingInterval === 'year' ? 'yearly' : 'monthly') +
             ', ' + t.billableSeats + ' paid seat' + (t.billableSeats === 1 ? '' : 's') + ' beyond yours'
@@ -57,21 +66,52 @@
           '<td class="muted">' + fmtDate(m.joined_at) + '</td><td class="js-act"></td>';
         tr.querySelector('.js-login').textContent = m.login + (m.id === me.id ? ' (you)' : '');
         if (t.role === 'owner' && m.role !== 'owner') {
+          var act = tr.querySelector('.js-act');
+
+          var mk = document.createElement('button');
+          mk.className = 'btn-sm';
+          mk.textContent = 'Make owner';
+          mk.onclick = function () {
+            if (!confirm('Make ' + m.login + ' the owner of ' + t.name + '?\n\n' +
+              'They take over invites, removals, and billing. You stay on the team as a member, ' +
+              'and only they can undo this.')) return;
+            fetch('/api/team/owner', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: m.id }),
+            }).then(function () { location.reload(); });
+          };
+          act.appendChild(mk);
+
           var b = document.createElement('button');
           b.className = 'btn-sm';
           b.textContent = 'Remove';
+          b.style.marginLeft = '6px';
           b.onclick = function () {
             if (!confirm('Remove ' + m.login + ' from the team? Their tests stay with the team, and the seat stops being billed.')) return;
             fetch('/api/team/members/' + m.id, { method: 'DELETE' }).then(function () { location.reload(); });
           };
-          tr.querySelector('.js-act').appendChild(b);
+          act.appendChild(b);
         }
         tbody.appendChild(tr);
       });
 
+      // Lapsed subscription: the pool is already on free limits, and the paid
+      // retention window is running out. Say the date — "soon" isn't actionable.
+      show('teamlapsed', !!t.graceEndsAt);
+      if (t.graceEndsAt) {
+        document.getElementById('teamlapsed').textContent =
+          'This team\'s subscription has ended. Results older than 14 days will start being ' +
+          'deleted on ' + fmtDate(t.graceEndsAt) + ' unless billing is renewed' +
+          (t.role === 'owner' ? '.' : ' — ask your team owner to renew.');
+      }
+
       show('teamowner', t.role === 'owner');
       show('deleteteam', t.role === 'owner');
       show('leaveteam', t.role !== 'owner');
+      // The owner has no "Leave team" — transfer is the way out, and it only
+      // exists once there's somebody to hand it to.
+      show('ownerhint', t.role === 'owner' && t.seats > 1);
 
       var itable = document.getElementById('teaminvites');
       var ibody = itable.querySelector('tbody');

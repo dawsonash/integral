@@ -16,8 +16,9 @@ process.env.INTEGRAL_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'integral-
 const app = require('../server/app');
 const { db } = require('../server/db');
 const teams = require('../server/lib/teams');
-const { planFor, PLANS } = require('../server/lib/plans');
+const { planFor, PLANS, RETENTION_GRACE_DAYS } = require('../server/lib/plans');
 const { sweep, DAY_MS } = require('../server/lib/retention');
+const { setTeamPlan } = require('../server/routes/billing');
 
 let server;
 let base;
@@ -203,6 +204,68 @@ test('the owner cannot leave, and only the owner can remove others', async () =>
   assert.equal((await api('DELETE', `/api/team/members/${mate.id}`, null, mateCookie)).status, 200);
 });
 
+test('an owner can hand the team to a member, and then leave', async () => {
+  const ownerCookie = await login('handoff', 'free');
+  const owner = userByLogin('handoff');
+  const team = paidTeam(owner.id, 'Handoff');
+  const heirCookie = await login('heir', 'free');
+  teams.acceptInvite(teams.createInvite(team.id, 'heir', owner.id), userByLogin('heir'));
+  const heir = userByLogin('heir');
+
+  // A member can't hand the team to themselves.
+  assert.equal((await api('POST', '/api/team/owner', { userId: heir.id }, heirCookie)).status, 403);
+  // Nor can the owner hand it to somebody outside the roster.
+  const outsiderCookie = await login('handoffoutsider', 'free');
+  const outsider = userByLogin('handoffoutsider');
+  assert.equal((await api('POST', '/api/team/owner', { userId: outsider.id }, ownerCookie)).status, 404);
+  assert.equal((await api('POST', '/api/team/owner', { userId: owner.id }, ownerCookie)).status, 400);
+
+  const done = await api('POST', '/api/team/owner', { userId: heir.id }, ownerCookie);
+  assert.equal(done.status, 200);
+  // The caller's own view comes back demoted, with the owner-only invite list gone.
+  assert.equal(done.json.team.role, 'member');
+  assert.deepEqual(done.json.team.invites, []);
+
+  assert.equal(teams.teamById.get(team.id).owner_user_id, heir.id);
+  assert.equal(teams.roleFor(team.id, heir.id), 'owner');
+  assert.equal(teams.roleFor(team.id, owner.id), 'member');
+  // Headcount is untouched, so the seat bill doesn't move.
+  assert.equal(teams.memberCount(team.id), 2);
+  assert.equal(teams.billableSeats(team.id), 1);
+
+  // The powers moved with the title.
+  assert.equal((await api('POST', '/api/team/invites', { invitee: 'someone' }, ownerCookie)).status, 403);
+  assert.equal((await api('POST', '/api/team/invites', { invitee: 'someone' }, heirCookie)).status, 200);
+  assert.equal((await api('DELETE', '/api/team', null, ownerCookie)).status, 403);
+
+  // And the former owner can now do the one thing they couldn't before.
+  const tests = await api('GET', '/api/tests', null, ownerCookie);
+  assert.equal(tests.status, 200);
+  assert.equal((await api('DELETE', `/api/team/members/${owner.id}`, null, ownerCookie)).status, 200);
+  assert.equal(teams.teamForUser(owner.id), null);
+});
+
+test('a demoted owner loses the team billing portal', async () => {
+  const ownerCookie = await login('portalowner', 'free');
+  const owner = userByLogin('portalowner');
+  const team = paidTeam(owner.id, 'Portal');
+  const heirCookie = await login('portalheir', 'free');
+  teams.acceptInvite(teams.createInvite(team.id, 'portalheir', owner.id), userByLogin('portalheir'));
+  const heir = userByLogin('portalheir');
+
+  // Checkout points both the team and its buyer at the same Stripe customer.
+  db.prepare("UPDATE teams SET stripe_customer_id = 'cus_test' WHERE id = ?").run(team.id);
+  db.prepare("UPDATE users SET stripe_customer_id = 'cus_test' WHERE id = ?").run(owner.id);
+
+  assert.equal((await api('POST', '/api/team/owner', { userId: heir.id }, ownerCookie)).status, 200);
+
+  // Without the demotion check this would fall through to the personal customer
+  // — which is the team's — and open the team's portal for a plain member.
+  const portal = await api('POST', '/api/billing/portal', null, ownerCookie);
+  assert.equal(portal.status, 403);
+  assert.equal(portal.json.error, 'not_team_owner');
+});
+
 test('/api/me reports the team entitlement, not the member\'s free row', async () => {
   const ownerCookie = await login('meowner', 'free');
   const owner = userByLogin('meowner');
@@ -249,6 +312,71 @@ test('retention sweeps team tests on the team plan, not the member\'s free plan'
     !db.prepare('SELECT 1 FROM sessions WHERE id = ?').get('sess-' + soloTest.id),
     'free solo session is swept at 14 days'
   );
+});
+
+test('a lapsed team keeps paid retention through the grace window, then drops', async () => {
+  const ownerCookie = await login('graceowner', 'free');
+  const owner = userByLogin('graceowner');
+  const team = paidTeam(owner.id, 'Grace');
+  const mateCookie = await login('gracemate', 'free');
+  teams.acceptInvite(teams.createInvite(team.id, 'gracemate', owner.id), userByLogin('gracemate'));
+
+  const t = await createTest('grace-test', mateCookie);
+  // Aged past the free window (14 days) but inside the paid one (365).
+  const aged = Date.now() - 30 * DAY_MS;
+  db.prepare("INSERT INTO sessions (id, test_id, status, started_at) VALUES (?, ?, 'completed', ?)")
+    .run('sess-grace', t.id, aged);
+  db.prepare("UPDATE tests SET status = 'live', launched_at = ? WHERE id = ?").run(aged, t.id);
+
+  // The subscription ends today.
+  setTeamPlan(teams.teamById.get(team.id), 'free', null);
+  const lapsedAt = teams.teamById.get(team.id).plan_lapsed_at;
+  assert.ok(lapsedAt, 'the lapse is stamped');
+
+  // Volume limits tighten immediately — that part is the plan working.
+  assert.equal(planFor(userByLogin('gracemate')).label, 'Free');
+
+  // But the data survives, and the live link stays open, for the whole window.
+  sweep();
+  assert.ok(db.prepare('SELECT 1 FROM sessions WHERE id = ?').get('sess-grace'), 'kept during grace');
+  assert.equal(db.prepare('SELECT status FROM tests WHERE id = ?').get(t.id).status, 'live');
+
+  // Everyone on the roster is told, with a date.
+  for (const cookie of [ownerCookie, mateCookie]) {
+    const { json } = await api('GET', '/api/team', null, cookie);
+    assert.equal(json.team.graceEndsAt, lapsedAt + RETENTION_GRACE_DAYS * DAY_MS);
+  }
+
+  // One day past the window, the free rules apply.
+  sweep(Date.now() + (RETENTION_GRACE_DAYS + 1) * DAY_MS);
+  assert.ok(!db.prepare('SELECT 1 FROM sessions WHERE id = ?').get('sess-grace'), 'swept after grace');
+  assert.equal(db.prepare('SELECT status FROM tests WHERE id = ?').get(t.id).status, 'closed');
+});
+
+test('the grace clock is stamped once and cleared on recovery', async () => {
+  const cookie = await login('clockowner', 'free');
+  const owner = userByLogin('clockowner');
+  const team = paidTeam(owner.id, 'Clock');
+
+  setTeamPlan(teams.teamById.get(team.id), 'free', null);
+  const first = teams.teamById.get(team.id).plan_lapsed_at;
+  assert.ok(first);
+
+  // A replayed or repeated webhook must not push the deadline back.
+  setTeamPlan(teams.teamById.get(team.id), 'free', null);
+  assert.equal(teams.teamById.get(team.id).plan_lapsed_at, first, 'clock is not extended');
+
+  // Fixing the card clears it outright.
+  setTeamPlan(teams.teamById.get(team.id), 'team', 'sub_test');
+  assert.equal(teams.teamById.get(team.id).plan_lapsed_at, null);
+  const { json } = await api('GET', '/api/team', null, cookie);
+  assert.equal(json.team.graceEndsAt, null);
+
+  // And a team that never paid at all gets no grace — there's nothing to grace.
+  const neverCookie = await login('neverpaid', 'free');
+  const neverTeam = teams.createTeam(userByLogin('neverpaid').id, 'Never', 'month');
+  assert.equal(teams.teamById.get(neverTeam.id).plan_lapsed_at, null);
+  assert.equal((await api('GET', '/api/team', null, neverCookie)).json.team.graceEndsAt, null);
 });
 
 test('billing endpoints degrade cleanly when Stripe is unconfigured', async () => {

@@ -4,7 +4,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { requireUser } = require('../lib/auth');
-const { planFor } = require('../lib/plans');
+const { planFor, graceEndsAt } = require('../lib/plans');
 const teams = require('../lib/teams');
 const { syncSeats } = require('./billing');
 
@@ -32,6 +32,13 @@ function requireOwner(req, res, next) {
   next();
 }
 
+// A team whose subscription ended keeps paid retention until this moment, then
+// drops to the free window and starts losing sessions. Everyone on the roster
+// sees it, not just the owner — it's their research on the clock too.
+function teamGrace(team) {
+  return team.plan === 'team' ? null : graceEndsAt(team.plan_lapsed_at);
+}
+
 function teamJson(req) {
   const team = req.team;
   const plan = planFor(req.user);
@@ -39,6 +46,7 @@ function teamJson(req) {
     id: team.id,
     name: team.name,
     plan: team.plan,
+    graceEndsAt: teamGrace(team),
     billingInterval: team.billing_interval,
     role: req.role,
     seats: teams.memberCount(team.id),
@@ -142,6 +150,23 @@ router.delete('/api/team/members/:userId', withTeam, async (req, res) => {
   teams.releaseMember(req.team.id, target);
   await syncSeats(teams.teamById.get(req.team.id));
   res.json({ ok: true });
+});
+
+// Hand the team to an existing member. Headcount is unchanged, so no syncSeats
+// — the only thing that moves is who holds the owner-only powers (invites,
+// removals, disbanding, the billing portal). The caller becomes a plain member,
+// so the response is deliberately their new, reduced view of the team.
+router.post('/api/team/owner', withTeam, requireOwner, (req, res) => {
+  const target = Number(req.body?.userId);
+  if (!target || target === req.user.id) {
+    return res.status(400).json({ error: 'already_owner', message: 'You already own this team.' });
+  }
+  if (!teams.roleFor(req.team.id, target)) {
+    return res.status(404).json({ error: 'not_found', message: 'That person is not on the team.' });
+  }
+  req.team = teams.transferOwnership(req.team.id, target);
+  req.role = teams.roleFor(req.team.id, req.user.id);
+  res.json({ team: teamJson(req) });
 });
 
 // Disbanding cancels the subscription; tests revert to the owner personally.

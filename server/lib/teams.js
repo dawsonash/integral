@@ -106,6 +106,19 @@ const releaseMember = db.transaction((teamId, userId) => {
   db.prepare('DELETE FROM team_members WHERE team_id = ? AND user_id = ?').run(teamId, userId);
 });
 
+// Ownership transfer: the only way out of a team for its owner short of
+// disbanding it. Roster size doesn't change, so there is nothing to re-bill —
+// but the subscription stays on the Stripe customer the original owner checked
+// out with, since Stripe can't move a subscription between customers.
+const transferOwnership = db.transaction((teamId, newOwnerId) => {
+  const team = teamById.get(teamId);
+  const setRole = db.prepare('UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?');
+  setRole.run('member', teamId, team.owner_user_id);
+  setRole.run('owner', teamId, newOwnerId);
+  db.prepare('UPDATE teams SET owner_user_id = ? WHERE id = ?').run(newOwnerId, teamId);
+  return teamById.get(teamId);
+});
+
 // Disbanding: tests fall back to personal ownership under the owner's account.
 const deleteTeam = db.transaction((teamId) => {
   const team = teamById.get(teamId);
@@ -118,5 +131,5 @@ const deleteTeam = db.transaction((teamId) => {
 module.exports = {
   TEAM_INCLUDED_SEATS,
   teamForUser, teamById, roleFor, memberCount, billableSeats, members, pendingInvites,
-  createTeam, createInvite, inviteMatchesUser, acceptInvite, releaseMember, deleteTeam,
+  createTeam, createInvite, inviteMatchesUser, acceptInvite, releaseMember, transferOwnership, deleteTeam,
 };

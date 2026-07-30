@@ -20,6 +20,8 @@ const { rewriteLocation, mergeCookies } = require('../server/lib/sandbox/proxy')
 const registry = require('../server/lib/sandbox/registry');
 const runner = require('../server/lib/sandbox/runner');
 const sandboxDb = require('../server/lib/sandbox/db');
+const policy = require('../server/lib/sandbox/policy');
+const confine = require('../server/lib/sandbox/confine');
 
 let server;
 let base;
@@ -156,10 +158,19 @@ test('installPlan: per-runtime dependency install, skipped once satisfied', () =
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'install-'));
 
   // Node: lockfile picks `npm ci`, and an existing tree skips entirely.
+  // Lifecycle scripts are off by default — they are arbitrary code from every
+  // transitive dependency, running before the app itself does.
   fs.writeFileSync(path.join(dir, 'package.json'), '{}');
   assert.match(runner.installPlan(dir, {}).cmd, /^npm install/);
+  assert.match(runner.installPlan(dir, {}).cmd, /--ignore-scripts/);
   fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}');
   assert.match(runner.installPlan(dir, {}).cmd, /^npm ci/);
+  assert.match(runner.installPlan(dir, {}).cmd, /--ignore-scripts/);
+  // ...and back on only by explicit opt-in (better-sqlite3, prisma et al).
+  assert.doesNotMatch(
+    runner.installPlan(dir, { install: { allowScripts: true } }).cmd,
+    /--ignore-scripts/
+  );
   fs.mkdirSync(path.join(dir, 'node_modules'));
   assert.equal(runner.installPlan(dir, {}), null);
   assert.equal(runner.installPlan(dir, { install: false }), null);
@@ -349,6 +360,235 @@ test('broken start command surfaces a boot-error page, not a hang', async () => 
   await fetch(`${base}/api/tests/${t.id}`, { method: 'DELETE', headers: { Cookie: cookie } });
 });
 
+// ---------- who may run code here (lib/sandbox/policy.js) ----------
+
+// Booting a sandbox is remote code execution by design, so a production
+// instance runs it only for an allowlist. The gate reads process.env on every
+// call, so a production-shaped environment can be simulated in place.
+function setEnv(key, value) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
+// Simulate a production instance to exercise the *entitlement* gate. Real
+// production also demands confinement (confine.js), which no developer machine
+// has — so this pins it off to keep these tests on one axis. The confinement
+// gate has its own test below.
+async function asProduction(allow, fn) {
+  const prevNodeEnv = process.env.NODE_ENV;
+  const prevAllow = process.env.INTEGRAL_SANDBOX_ALLOW;
+  const prevConfine = process.env.INTEGRAL_SANDBOX_CONFINE;
+  setEnv('NODE_ENV', 'production');
+  setEnv('INTEGRAL_SANDBOX_ALLOW', allow);
+  setEnv('INTEGRAL_SANDBOX_CONFINE', 'off');
+  try {
+    return await fn();
+  } finally {
+    setEnv('NODE_ENV', prevNodeEnv);
+    setEnv('INTEGRAL_SANDBOX_ALLOW', prevAllow);
+    setEnv('INTEGRAL_SANDBOX_CONFINE', prevConfine);
+  }
+}
+
+test('sandbox entitlement: off in production unless the owner is allowlisted', async () => {
+  // Outside production it stays on, so local dev and this suite are untouched.
+  assert.equal(policy.sandboxEnabledFor({ login: 'nobody' }), true);
+
+  await asProduction(undefined, () => {
+    assert.equal(policy.sandboxEnabledFor({ login: 'sbxdev' }), false);
+    assert.equal(policy.sandboxEnabledFor(null), false);
+  });
+  await asProduction('someone,SBXDev', () => {
+    assert.equal(policy.sandboxEnabledFor({ login: 'sbxdev' }), true); // case-insensitive
+    assert.equal(policy.sandboxEnabledFor({ login: 'nobody' }), false);
+  });
+  await asProduction('*', () => {
+    assert.equal(policy.sandboxEnabledFor({ login: 'anyone' }), true);
+  });
+});
+
+test('a disallowed owner cannot create a server test or store a start command', async () => {
+  await asProduction(undefined, async () => {
+    const fd = new FormData();
+    fd.append('name', 'Server fixture');
+    const dir = path.join(__dirname, '..', 'fixtures', 'server-app');
+    const paths = ['package.json', 'server.js'];
+    for (const p of paths) fd.append('files', new Blob([fs.readFileSync(path.join(dir, p))]), p);
+    fd.append('paths', JSON.stringify(paths));
+    const res = await fetch(`${base}/api/tests`, { method: 'POST', body: fd, headers: { Cookie: cookie } });
+    assert.equal(res.status, 400);
+    // Honest about why: the repo was recognized, running it isn't permitted.
+    assert.equal((await res.json()).error, 'server_app_unsupported');
+  });
+});
+
+test('entitlement is re-checked at boot, not just at creation', async () => {
+  // Created and configured while allowed — the row outlives the entitlement.
+  const t = await createServerTest();
+  const patch = await fetch(`${base}/api/tests/${t.id}/backend-config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ backendConfig: FIXTURE_CONFIG }),
+  });
+  assert.equal(patch.status, 200);
+
+  await asProduction(undefined, async () => {
+    // Nothing spawns: the testee gets the preview notice, not an app.
+    const page = await fetch(`${base}/t/${t.id}/app/`);
+    assert.equal(page.status, 502);
+    assert.match(await page.text(), /limited preview/i);
+    // And the shell command surface is closed too.
+    const blocked = await fetch(`${base}/api/tests/${t.id}/backend-config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ backendConfig: { ...FIXTURE_CONFIG, start: { cmd: 'touch /tmp/pwned' } } }),
+    });
+    assert.equal(blocked.status, 403);
+  });
+
+  // Allowlisting the owner turns it back on, same instance, same test.
+  await asProduction('sbxdev', async () => {
+    const page = await fetch(`${base}/t/${t.id}/app/`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /hello-sandbox/);
+  });
+
+  await fetch(`${base}/api/tests/${t.id}`, { method: 'DELETE', headers: { Cookie: cookie } });
+});
+
+test('the sandboxed app is never pointed at Integral\'s own home directory', () => {
+  // $HOME on the service user is the app root — it holds .env and
+  // data/integral.db. buildEnv must hand the child its artifact dir instead.
+  const env = runner.buildEnv({}, { testId: 'abc', port: 1 });
+  assert.notEqual(env.HOME, process.env.HOME);
+  assert.match(env.HOME, /abc$/);
+});
+
+// ---------- confinement (server/lib/sandbox/confine.js) ----------
+
+// Run fn with the confinement knobs pinned, then restore. The wrapper path is
+// pointed at something absent so these exercise the "cannot confine" branches
+// without needing root or systemd.
+async function withConfine({ mode, nodeEnv, wrapper }, fn) {
+  const prev = {
+    NODE_ENV: process.env.NODE_ENV,
+    INTEGRAL_SANDBOX_CONFINE: process.env.INTEGRAL_SANDBOX_CONFINE,
+    INTEGRAL_SANDBOX_WRAPPER: process.env.INTEGRAL_SANDBOX_WRAPPER,
+  };
+  setEnv('NODE_ENV', nodeEnv);
+  setEnv('INTEGRAL_SANDBOX_CONFINE', mode);
+  setEnv('INTEGRAL_SANDBOX_WRAPPER', wrapper || '/nonexistent/integral-sandbox-run');
+  confine.resetCache();
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of Object.entries(prev)) setEnv(k, v);
+    confine.resetCache();
+  }
+}
+
+test('confinement is required in production and optional outside it', async () => {
+  const refuses = async (opts) => {
+    await withConfine(opts, () => {
+      assert.throws(() => confine.preflight(), (e) => e.code === 'SANDBOX_NOT_CONFINED');
+    });
+  };
+  const allows = async (opts) => {
+    await withConfine(opts, () => assert.equal(confine.preflight().mode, 'none'));
+  };
+
+  // Explicitly off: unconfined everywhere, no questions asked.
+  await allows({ mode: 'off' });
+  await allows({ mode: 'off', nodeEnv: 'production' });
+  // Default 'auto' mirrors policy.js — permissive in dev, strict in production.
+  await allows({ mode: 'auto' });
+  await allows({ mode: undefined });
+  await refuses({ mode: 'auto', nodeEnv: 'production' });
+  await refuses({ mode: undefined, nodeEnv: 'production' });
+  // 'require' is how a developer opts into production strictness locally.
+  await refuses({ mode: 'require' });
+  await refuses({ mode: 'require', nodeEnv: 'production' });
+
+  // An unrecognised value must not read as "off".
+  await refuses({ mode: 'yes-please', nodeEnv: 'production' });
+});
+
+test('a wrapper that is not root-owned is not trusted', async () => {
+  // The wrapper holds the whole policy, so a copy anyone could edit is no
+  // better than none — it must not satisfy preflight.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'confine-'));
+  const fake = path.join(dir, 'integral-sandbox-run');
+  fs.writeFileSync(fake, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(fake, 0o777);
+  await withConfine({ mode: 'require', wrapper: fake }, () => {
+    assert.throws(() => confine.preflight(), (e) => e.code === 'SANDBOX_NOT_CONFINED');
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('preflight catches secrets the sandbox user could still read', () => {
+  // The uid split is cosmetic if .env is left at 0644, so preflight stats the
+  // secret files against the sandbox user rather than trusting the setup.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'secrets-'));
+  const f = path.join(dir, '.env');
+  fs.writeFileSync(f, 'STRIPE_SECRET_KEY=sk_live_x\n');
+  const stranger = { uid: process.getuid() + 1000, gid: 999999, groups: [999999] };
+
+  fs.chmodSync(f, 0o644);
+  assert.match(confine.readableBy(f, stranger), /world-readable/);
+  fs.chmodSync(f, 0o600);
+  assert.equal(confine.readableBy(f, stranger), null);
+
+  // Group-readable counts as reachable when the sandbox user is in that group,
+  // whether it is their primary gid or a supplementary one.
+  fs.chmodSync(f, 0o640);
+  const gid = fs.statSync(f).gid;
+  assert.match(confine.readableBy(f, { ...stranger, gid }), /readable by the sandbox user's group/);
+  assert.match(
+    confine.readableBy(f, { ...stranger, groups: [999999, gid] }),
+    /readable by the sandbox user's group/
+  );
+  // Owning the file is the third way in.
+  assert.match(
+    confine.readableBy(f, { ...stranger, uid: process.getuid() }),
+    /owned by the sandbox user/
+  );
+
+  assert.equal(confine.readableBy(path.join(dir, 'absent'), stranger), null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an unconfinable host refuses to boot instead of running as the service user', async () => {
+  const t = await createServerTest();
+  const patch = await fetch(`${base}/api/tests/${t.id}/backend-config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ backendConfig: FIXTURE_CONFIG }),
+  });
+  assert.equal(patch.status, 200);
+
+  await withConfine({ mode: 'require' }, async () => {
+    const page = await fetch(`${base}/t/${t.id}/app/`);
+    assert.equal(page.status, 502);
+    // Fails closed, and says why rather than quietly downgrading.
+    assert.match(await page.text(), /cannot be confined/i);
+  });
+
+  // A failed boot is remembered for ERROR_COOLDOWN_MS so a page full of asset
+  // requests doesn't retry it per request; clear it before re-testing.
+  await registry.teardown(t.id);
+
+  // Same instance, same test: with confinement waived it boots normally, so the
+  // refusal above is the gate and not a broken fixture.
+  await withConfine({ mode: 'off' }, async () => {
+    const page = await fetch(`${base}/t/${t.id}/app/`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /hello-sandbox/);
+  });
+
+  await fetch(`${base}/api/tests/${t.id}`, { method: 'DELETE', headers: { Cookie: cookie } });
+});
+
 // ---------- Python fixture boot behind the proxy ----------
 
 const PYTHON = process.env.INTEGRAL_PYTHON || 'python3';
@@ -462,5 +702,75 @@ test('provision + faker seed + drop against local Postgres', async (t) => {
     assert.ok(seeded.user_data[1].username);
   } finally {
     await sandboxDb.drop('sbxtestdb');
+  }
+});
+
+test('the app gets an unprivileged role, never Postgres superuser', async (t) => {
+  // A superuser connection is a host compromise by itself: COPY ... FROM
+  // PROGRAM runs shell commands as the postgres OS user, pg_read_file reads
+  // the host filesystem, and ACLs stop applying so every other database on
+  // the instance is readable. Owning one database is all a sandboxed app
+  // needs, so that is all it may have.
+  const { Client } = require('pg');
+  let victim;
+  let attacker;
+  try {
+    victim = await sandboxDb.provision('sbxvictim');
+    attacker = await sandboxDb.provision('sbxattack');
+  } catch (e) {
+    if (e.code === 'SANDBOX_PG_UNREACHABLE') {
+      t.skip('no local Postgres (set INTEGRAL_SANDBOX_PG_URL to enable)');
+      return;
+    }
+    throw e;
+  }
+  const client = new Client({
+    host: attacker.host, port: Number(attacker.port), user: attacker.user,
+    password: attacker.password, database: attacker.database, connectionTimeoutMillis: 4000,
+  });
+  await client.connect();
+  try {
+    const role = (await client.query(
+      'SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = current_user'
+    )).rows[0];
+    assert.equal(role.rolsuper, false);
+    assert.equal(role.rolcreatedb, false);
+    assert.equal(role.rolcreaterole, false);
+
+    for (const sql of [
+      "CREATE TABLE rce(l text); COPY rce FROM PROGRAM 'id'",
+      "SELECT pg_read_file('/etc/passwd')",
+      "ALTER SYSTEM SET log_statement = 'all'",
+    ]) {
+      await assert.rejects(() => client.query(sql), /permission denied/i, sql);
+    }
+
+    // Its own database is still fully usable — schema setup and seeding run
+    // as this role, so anything less would break every server test.
+    await client.query('CREATE TABLE ok_here (id serial PRIMARY KEY, v text)');
+    await client.query("INSERT INTO ok_here (v) VALUES ('fine')");
+    assert.equal((await client.query('SELECT v FROM ok_here')).rows[0].v, 'fine');
+  } finally {
+    await client.end();
+  }
+
+  // Each sandbox is a different tenant's code; a fresh database would leave
+  // CONNECT granted to PUBLIC without the explicit revoke in provision().
+  const crossTenant = new Client({
+    host: victim.host, port: Number(victim.port), user: attacker.user,
+    password: attacker.password, database: victim.database, connectionTimeoutMillis: 4000,
+  });
+  await assert.rejects(() => crossTenant.connect(), /permission denied for database/i);
+
+  await sandboxDb.drop('sbxvictim');
+  await sandboxDb.drop('sbxattack');
+  // Dropping takes the role with it, or the next boot collides on the name.
+  const admin = new Client({ connectionString: sandboxDb.ADMIN_URL, connectionTimeoutMillis: 4000 });
+  await admin.connect();
+  try {
+    const left = await admin.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [sandboxDb.roleNameFor('sbxattack')]);
+    assert.equal(left.rowCount, 0);
+  } finally {
+    await admin.end();
   }
 });

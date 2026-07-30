@@ -20,6 +20,7 @@ const { pullRepo } = require('../lib/github');
 const { validateMocks, cleanMocks, mocksFor, suggestApiCalls } = require('../lib/mocks');
 const { classify, backendConfigFor, validateBackendConfig } = require('../lib/sandbox/classify');
 const sandboxes = require('../lib/sandbox/registry');
+const { sandboxEnabledFor, DISABLED_MESSAGE } = require('../lib/sandbox/policy');
 
 const router = express.Router();
 // fieldSize covers the pasted-HTML path; the per-plan artifact cap is enforced
@@ -154,6 +155,11 @@ router.post('/api/tests', uploadLimiter, upload.any(), async (req, res) => {
   let backendConfig = null;
   if (!entry) {
     const detected = classify(artifactRoot(id));
+    if (detected.kind === 'server' && !sandboxEnabledFor(req.user)) {
+      // Say so honestly rather than reporting 'no_html': the repo was
+      // recognized, running it just isn't a capability this account has.
+      return res.status(400).json({ error: 'server_app_unsupported', message: DISABLED_MESSAGE });
+    }
     if (detected.kind === 'server') {
       backendConfig = detected;
       entry = ''; // the app's own routes decide pages; iframe starts at /t/:id/app/
@@ -220,6 +226,12 @@ router.get('/api/tests/:id/backend-config', ownedTest, (req, res) => {
 });
 
 router.patch('/api/tests/:id/backend-config', express.json(), ownedTest, (req, res) => {
+  // start.cmd, schemaCmd and seed.command are shell commands the developer
+  // types — the sandbox's primary code-execution input. Don't even store them
+  // for an account that isn't allowed to run them.
+  if (!sandboxEnabledFor(req.user)) {
+    return res.status(403).json({ error: 'sandbox_disabled', message: DISABLED_MESSAGE });
+  }
   const cfg = req.body?.backendConfig;
   const err = validateBackendConfig(cfg);
   if (err) return res.status(400).json({ error: 'invalid_backend_config', message: err });
@@ -346,8 +358,8 @@ router.patch('/api/tests/:id', express.json(), ownedTest, (req, res) => {
   res.json(testJson(getTest.get(req.params.id)));
 });
 
-router.delete('/api/tests/:id', ownedTest, (req, res) => {
-  deleteTestData(req.test.id);
+router.delete('/api/tests/:id', ownedTest, async (req, res) => {
+  await deleteTestData(req.test.id);
   res.json({ ok: true });
 });
 

@@ -6,14 +6,20 @@
 # The origin split is enforced twice: here (cosmetically, both names hit the
 # same app) and in server/app.js via INTEGRAL_RUN_HOST (authoritatively).
 # Replace integral.example.com with your domain.
+#
+# Upstream is 127.0.0.2, not 127.0.0.1, and must match INTEGRAL_BIND_HOST in
+# .env. The sandbox's cgroup filter permits 127.0.0.1 (ephemeral Postgres, stub
+# proxy) but nothing else, so keeping this API off that address is what denies a
+# sandboxed app any route to it. Only matters when the sandbox is enabled;
+# harmless otherwise.
 
 app.integral.example.com {
-	reverse_proxy 127.0.0.1:4000
+	reverse_proxy 127.0.0.2:4000
 	encode gzip
 }
 
 run.integral.example.com {
-	reverse_proxy 127.0.0.1:4000
+	reverse_proxy 127.0.0.2:4000
 	encode gzip
 	header {
 		# Hosted artifacts are untrusted uploads: keep them out of search

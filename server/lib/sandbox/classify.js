@@ -410,6 +410,18 @@ function validateBackendConfig(v) {
   if (v.env && (typeof v.env !== 'object' || Object.values(v.env).some((x) => typeof x !== 'string'))) {
     return 'env must map variable names to strings.';
   }
+  if (v.install != null && v.install !== false) {
+    if (typeof v.install !== 'object' || Array.isArray(v.install)) {
+      return 'install must be an object or false.';
+    }
+    if (v.install.cmd != null && typeof v.install.cmd !== 'string') return 'install.cmd must be a string.';
+    // Opting dependency lifecycle scripts back on is a deliberate choice to
+    // execute arbitrary code from every transitive dependency (runner.js
+    // installPlan), so it has to be an explicit boolean.
+    if (v.install.allowScripts != null && typeof v.install.allowScripts !== 'boolean') {
+      return 'install.allowScripts must be a boolean.';
+    }
+  }
   if (v.stubs) {
     if (!Array.isArray(v.stubs)) return 'stubs must be an array.';
     for (const s of v.stubs) {

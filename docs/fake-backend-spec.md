@@ -222,6 +222,48 @@ a **local ephemeral Postgres** (reuse the repo's `docker-compose.yaml` service, 
 local instance). Deny outbound network except stubbed hosts. Do **not** expose this to untrusted repos
 in production.
 
+**As built — how "trusted only" is enforced.** The posture above is a rule, so the code holds it:
+
+- **Entitlement gate** (`lib/sandbox/policy.js`). In production the sandbox runs only for GitHub
+  logins named in `INTEGRAL_SANDBOX_ALLOW` (`*` = everyone, single-tenant installs only); unset means
+  off for all. Outside production it stays on, so local dev and the test suite are untouched — the
+  same line `devLoginEnabled()` draws. Checked at three points: test creation, the `backend_config`
+  PATCH that stores `start.cmd`, and — authoritatively, since a test row outlives the entitlement that
+  created it — in `registry.ensure()` before anything is spawned. The boot-time check resolves the
+  **owner's** entitlement, because the caller there is an anonymous testee.
+- **No database superuser** (`lib/sandbox/db.js`). Each test gets a database owned by a throwaway
+  unprivileged role, dropped with it. Superuser would be a host compromise on its own: `COPY … FROM
+  PROGRAM` executes shell commands as the postgres OS user and `pg_read_file` reads the host
+  filesystem. `CONNECT` is revoked from `PUBLIC` so one test's app cannot open another's database.
+- **No path to Integral's secrets via `$HOME`** (`lib/sandbox/runner.js`). The service user's home is
+  the app root, holding `.env` and `data/integral.db`; the child is given its artifact dir instead.
+- **Separate uid + cgroup** (`lib/sandbox/confine.js`, `deploy/integral-sandbox-run`). The child no
+  longer runs as the `integral` service user. It is dropped to an unprivileged `integral-sbx` uid
+  inside a systemd scope carrying `MemoryMax`, `CPUQuota`, `TasksMax` and `RuntimeMaxSec`. Every
+  security parameter lives in a **root-owned wrapper** reached through one `NOPASSWD` sudoers entry, so
+  even an RCE in Integral itself cannot request a weaker sandbox — it supplies only a unit name, a
+  profile, a working directory and a command, all validated. Stopping the scope kills the whole cgroup,
+  which closes the `setsid` escape from the old process-group teardown.
+- **Egress filtering that actually holds** (same). `IPAddressDeny`/`IPAddressAllow` are enforced by the
+  kernel on the cgroup, so unlike `stubs.js` they apply to clients that ignore proxy env vars. The
+  `app` profile permits only `127.0.0.1` (throwaway Postgres, stub proxy); the `install` profile — the
+  one moment real network is needed — denies link-local (cloud instance metadata, i.e. IAM
+  credentials) and RFC1918. Because the filter is per-address rather than per-port, Integral's own
+  listener moves to `127.0.0.2` (`INTEGRAL_BIND_HOST`) so the sandbox has no route to `/api/*`.
+- **Dependency install scripts off by default** (`installPlan`). `npm` runs with `--ignore-scripts`;
+  every transitive dependency's `postinstall` is arbitrary code that would otherwise run before the app
+  does. `install.allowScripts` opts back in per test.
+- **Fails closed** (`confine.preflight()`). In production a host that cannot confine refuses to boot
+  rather than silently running as the service user, and it checks that `.env` and `integral.db` are
+  genuinely unreadable by the sandbox uid — a half-finished `deploy/README.md` setup makes the uid
+  split cosmetic, so it is verified rather than assumed.
+
+These narrow the blast radius; they do not make the host safe for untrusted code. It is the same
+kernel, there is no disk quota (`LimitFSIZE` caps a single file, not a filling disk — real containment
+needs filesystem project quotas), and `pip` has no `--ignore-scripts`, so a source distribution still
+executes `setup.py` during the install step. The allowlist is what stands between this feature and a
+stranger, and it stays that way until the container work below lands.
+
 **Production (design later, out of scope here):** per-test isolated container (gVisor/Firecracker/
 Docker) with no host FS access, egress firewall, CPU/mem/pids/time caps, ephemeral lifecycle. Untrusted
 code execution is the central risk; the current static pipeline deliberately never runs artifact code,

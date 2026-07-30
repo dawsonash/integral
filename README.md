@@ -76,8 +76,27 @@ setup against it, seeds fake rows (dev-editable per test in setup), boots the
 app as a child process with dummy secrets, auto-authenticates a fake user, and
 reverse-proxies it same-origin under `/t/:id/app/*` with the usual recorder
 injection — real pages from fake data, never real credentials or a real
-database. Needs a local Postgres (`INTEGRAL_SANDBOX_PG_URL`, default
-`127.0.0.1:5432`); per spec §9 the prototype is for trusted repos only.
+database. Needs a local Postgres whose admin role has CREATEDB and CREATEROLE
+(`INTEGRAL_SANDBOX_PG_URL`, default `127.0.0.1:5432`): every test gets a
+throwaway database owned by a throwaway unprivileged role, never superuser.
+
+Booting one runs the repo's own code on the host, so per spec §9 it is for
+trusted repos only — and the code enforces that rather than trusting the
+reader. **In production the sandbox is off unless the test owner's login is in
+`INTEGRAL_SANDBOX_ALLOW`**; unset means off for everyone, which is the intended
+launch posture. Static, SPA, and React tests are unaffected. Outside production
+it's on by default, so local development needs no configuration.
+
+That code also runs confined: a separate unprivileged uid inside a systemd scope
+with memory/CPU/task/wall-clock caps and kernel-level egress filtering, behind a
+root-owned wrapper Integral cannot talk its way past
+([`deploy/integral-sandbox-run`](deploy/integral-sandbox-run)). In production a
+host that can't confine **refuses to boot** rather than falling back to running
+as the service user, and it verifies that `.env` and `integral.db` really are
+unreadable by the sandbox uid. `deploy/README.md` has the one-time setup. This
+is a uid boundary on a shared kernel, not a container — it shrinks the blast
+radius of a compromised dependency in a repo you already trust; the allowlist is
+still what keeps strangers out.
 
 Python repos are classified from `requirements.txt` / `pyproject.toml` /
 `Pipfile`, installed into a virtualenv inside the artifact dir

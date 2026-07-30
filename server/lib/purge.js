@@ -22,20 +22,23 @@ function deleteSessionRows(sessionIds) {
   del(sessionIds);
 }
 
-function deleteTestData(testId) {
+async function deleteTestData(testId) {
   const sessionIds = db.prepare('SELECT id FROM sessions WHERE test_id = ?').all(testId).map((r) => r.id);
   deleteSessionRows(sessionIds);
   db.prepare('DELETE FROM reports WHERE test_id = ?').run(testId);
   db.prepare('DELETE FROM tests WHERE id = ?').run(testId);
+  // Stop any live sandbox (child process + throwaway DB) *before* removing the
+  // artifact dir, not after: that directory is the running app's cwd and HOME,
+  // and under confinement its files belong to the sandbox uid. Deleting it out
+  // from under a live child raced against files still being written, and now
+  // risks a partly-removed tree this process can no longer finish cleaning.
+  await require('./sandbox/registry').teardown(testId).catch(() => {});
   fs.rmSync(artifactRoot(testId), { recursive: true, force: true });
-  // Server-rendered tests may have a live sandbox (child process + throwaway
-  // DB); fire-and-forget — the ephemeral DB is force-dropped either way.
-  require('./sandbox/registry').teardown(testId).catch(() => {});
 }
 
-function deleteUserData(userId) {
+async function deleteUserData(userId) {
   const testIds = db.prepare('SELECT id FROM tests WHERE user_id = ?').all(userId).map((r) => r.id);
-  for (const id of testIds) deleteTestData(id);
+  for (const id of testIds) await deleteTestData(id);
   // Team rows the account leaves behind. Callers (routes/auth.js) already
   // settled the roster — dropping the team or releasing the seat — so this is
   // just making sure nothing dangles.

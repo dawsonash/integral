@@ -78,8 +78,15 @@ function sweep(now = Date.now()) {
   const testExists = db.prepare('SELECT 1 FROM tests WHERE id = ?');
   for (const d of fs.readdirSync(ARTIFACTS_DIR)) {
     if (!testExists.get(d)) {
-      fs.rmSync(path.join(ARTIFACTS_DIR, d), { recursive: true, force: true });
-      out.orphanArtifactDirs++;
+      // Per-dir try/catch: a sandbox writes into its artifact dir as a
+      // different uid, so one unremovable subtree (EPERM — which `force` does
+      // not swallow, unlike ENOENT) must not abort the whole sweep.
+      try {
+        fs.rmSync(path.join(ARTIFACTS_DIR, d), { recursive: true, force: true });
+        out.orphanArtifactDirs++;
+      } catch (e) {
+        console.error(`[retention] could not remove artifact dir ${d}: ${e.message}`);
+      }
     }
   }
   return out;

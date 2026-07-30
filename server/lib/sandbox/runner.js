@@ -1,9 +1,9 @@
 // Sandbox lifecycle (spec §3): provision an ephemeral DB, run the app's own
 // schema setup against it, seed fake rows, boot the app as a child process
 // with an injected environment (dummy secrets, DB coords, stub proxy), and
-// health-check until it answers. Prototype posture per spec §9: trusted/local
-// only — the app runs as a host child process, not a container.
-const { spawn } = require('child_process');
+// health-check until it answers. Prototype posture per spec §9: trusted repos
+// only — the app runs behind a uid + cgroup boundary (confine.js), not in a
+// container.
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
@@ -12,6 +12,7 @@ const sandboxDb = require('./db');
 const { seedFaker } = require('./seed');
 const { establish } = require('./auth');
 const { startStubs } = require('./stubs');
+const { preflight, spawnConfined, killConfined, unitFor } = require('./confine');
 
 const MAX_LOG_LINES = 300;
 
@@ -44,15 +45,20 @@ function freePort() {
   });
 }
 
-// Run a setup command (schema/seed) to completion; output lands in the
-// sandbox log so failures are diagnosable from the boot-error page.
-function runCmd(cmd, { cwd, env, logs, label, timeoutMs = 120000 }) {
+// Run a setup command (schema/seed/install) to completion; output lands in the
+// sandbox log so failures are diagnosable from the boot-error page. Each step
+// gets its own scope unit so a leftover scope can never collide with the app's.
+function runCmd(cmd, { cwd, env, logs, label, timeoutMs = 120000, confined, unit, profile = 'app' }) {
   return new Promise((resolve, reject) => {
     pushLog(logs, label, `$ ${cmd}`);
-    const proc = spawn(cmd, { shell: true, cwd, env });
+    const stepUnit = `${unit}-${label}`;
+    const proc = spawnConfined(cmd, { cwd, env, unit: stepUnit, profile, confined });
     proc.stdout.on('data', (d) => pushLog(logs, label, d));
     proc.stderr.on('data', (d) => pushLog(logs, label, d));
     const timer = setTimeout(() => {
+      // Killing the local child only kills sudo; the scope holds the actual
+      // work, so it has to be stopped by name.
+      if (confined) killConfined(stepUnit);
       proc.kill('SIGKILL');
       reject(new Error(`${label} command timed out after ${timeoutMs / 1000}s: ${cmd}`));
     }, timeoutMs);
@@ -88,10 +94,15 @@ function installPlan(root, config) {
 
   if (!fs.existsSync(path.join(root, 'package.json'))) return null;
   if (fs.existsSync(path.join(root, 'node_modules'))) return null;
+  // postinstall scripts are arbitrary code from every transitive dependency,
+  // and they run before the app itself does — so they are off unless the test
+  // owner deliberately turns them back on. Packages that fetch prebuilt
+  // binaries this way (better-sqlite3, prisma) need install.allowScripts.
+  const scripts = config.install?.allowScripts === true ? '' : ' --ignore-scripts';
   return {
     cmd: custom || (fs.existsSync(path.join(root, 'package-lock.json'))
-      ? 'npm ci --no-audit --no-fund'
-      : 'npm install --no-audit --no-fund'),
+      ? `npm ci --no-audit --no-fund${scripts}`
+      : `npm install --no-audit --no-fund${scripts}`),
   };
 }
 
@@ -102,7 +113,13 @@ function installPlan(root, config) {
 function buildEnv(config, handle) {
   const env = {
     PATH: process.env.PATH,
-    HOME: process.env.HOME,
+    // Never Integral's own HOME. The service user's home *is* the app root
+    // (deploy/README.md creates it with `useradd -d /opt/integral`), which
+    // holds .env and data/integral.db — so passing it through would hand the
+    // sandboxed app a signpost to every secret this process took care not to
+    // put in its environment. The artifact dir is a writable home of its own,
+    // and it gets cleaned up with the artifact.
+    HOME: artifactRoot(handle.testId),
     LANG: process.env.LANG,
     TMPDIR: process.env.TMPDIR,
     // development, not production: production presets (secure cookies, strict
@@ -172,6 +189,10 @@ async function boot(test, config) {
   const logs = [];
   const start = config.start || {};
   if (!start.cmd) throw new Error('backend_config.start.cmd is not set.');
+  // Before anything with side effects: a host that cannot confine the child
+  // must fail here, not after it has provisioned a database and started
+  // running the repo's code as the service user.
+  const confined = preflight().mode === 'systemd';
   const port = start.port || (await freePort());
   const handle = {
     testId: test.id,
@@ -184,6 +205,8 @@ async function boot(test, config) {
     auth: null,
     stub: null,
     exited: null,
+    confined,
+    unit: unitFor(test.id),
   };
   try {
     // 1. throwaway DB (postgres only; sqlite apps own their file, 'none' skips)
@@ -201,12 +224,19 @@ async function boot(test, config) {
     const install = installPlan(root, config);
     if (install) {
       const installEnv = { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG, TMPDIR: env.TMPDIR };
-      await runCmd(install.cmd, { cwd: root, env: installEnv, logs, label: 'install', timeoutMs: 300000 });
+      // The 'install' profile is the one moment the sandbox gets real network
+      // (npm/pypi). It is still denied link-local — cloud instance metadata —
+      // and RFC1918, so a hostile package cannot reach IAM credentials or
+      // anything else on the host's network.
+      await runCmd(install.cmd, {
+        cwd: root, env: installEnv, logs, label: 'install', timeoutMs: 300000,
+        confined, unit: handle.unit, profile: 'install',
+      });
     }
 
     // 3. the app's own schema setup, pointed at the ephemeral DB
     if (config.db?.schemaCmd) {
-      await runCmd(config.db.schemaCmd, { cwd: root, env, logs, label: 'schema' });
+      await runCmd(config.db.schemaCmd, { cwd: root, env, logs, label: 'schema', confined, unit: handle.unit });
     } else if (config.db?.schemaSql) {
       await runSqlFile(handle, root, config.db.schemaSql, logs);
     }
@@ -218,12 +248,14 @@ async function boot(test, config) {
       pushLog(logs, 'seed', `seeded ${Object.keys(handle.seeded).join(', ')}`);
     } else if (seed.mode === 'command' && seed.command) {
       if (seed.command.startsWith('__sql:')) await runSqlFile(handle, root, seed.command.slice(6), logs);
-      else await runCmd(seed.command, { cwd: root, env, logs, label: 'seed' });
+      else await runCmd(seed.command, { cwd: root, env, logs, label: 'seed', confined, unit: handle.unit });
     }
 
     // 5. boot the app (own process group so teardown can kill shell + children)
     pushLog(logs, 'app', `$ ${start.cmd}`);
-    handle.proc = spawn(start.cmd, { shell: true, cwd: root, env, detached: true });
+    handle.proc = spawnConfined(start.cmd, {
+      cwd: root, env, unit: handle.unit, profile: 'app', detached: true, confined,
+    });
     handle.proc.stdout.on('data', (d) => pushLog(logs, 'app', d));
     handle.proc.stderr.on('data', (d) => pushLog(logs, 'app', d));
     handle.proc.on('exit', (code) => { handle.exited = code == null ? -1 : code; });
@@ -249,6 +281,13 @@ async function boot(test, config) {
 
 async function teardown(handle) {
   if (!handle) return;
+  // Stop the scope first: it kills every process in the cgroup, including
+  // anything that detached with setsid to survive the process-group kill
+  // below. Unconfined, that escape is simply available — which is one more
+  // reason production requires confinement.
+  if (handle.confined && handle.unit) {
+    try { killConfined(handle.unit); } catch (e) { /* best effort */ }
+  }
   if (handle.proc && handle.exited === null) {
     // Negative pid = the whole process group (shell:true means the app is a
     // grandchild; killing just the shell would orphan it).

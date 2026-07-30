@@ -306,7 +306,10 @@
   border-bottom: 1px solid var(--line);
 }
 .lsection-alt > * { max-width: 1060px; margin-left: auto; margin-right: auto; }
-.lsection-alt h2 { margin-bottom: 28px; }
+/* Restates the auto side-margins from the rule above: `.lsection h2` is more
+   specific and would otherwise zero them, leaving the heading's 1060px box
+   pinned to the left edge of the full-bleed band. */
+.lsection-alt h2 { margin: 0 auto 28px; }
 
 .lgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 /* Even rows for feature counts that aren't a multiple of three. Same
@@ -334,7 +337,9 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 32px;
-  margin: 0;
+  /* auto, not 0 — inside .lsection-alt this is what keeps the steps centered
+     in the full-bleed band once it's wider than the 1060px content column. */
+  margin: 0 auto;
   padding: 0 24px;
 }
 .steps h3 { font-size: 16px; margin: 0 0 6px; }

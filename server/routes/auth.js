@@ -186,7 +186,7 @@ router.delete('/api/account', requireUser, async (req, res) => {
       console.error('[billing] subscription cancel on account delete failed:', e.message);
     }
   }
-  deleteUserData(req.user.id);
+  await deleteUserData(req.user.id);
   clearSessionCookie(res);
   res.json({ ok: true });
 });

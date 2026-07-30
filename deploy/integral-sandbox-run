@@ -1,0 +1,140 @@
+#!/bin/sh
+# Confinement wrapper for the Integral fake-backend sandbox.
+#
+#   install -o root -g root -m 0755 integral-sandbox-run /usr/local/bin/
+#   echo 'integral ALL=(root) NOPASSWD:SETENV: /usr/local/bin/integral-sandbox-run' \
+#     | install -m 0440 /dev/stdin /etc/sudoers.d/integral
+#
+# Every security parameter lives HERE, in a root-owned file, and none of them
+# come from the caller. Integral passes only a unit name, a profile name, a
+# working directory and a command string; it cannot ask for a weaker sandbox.
+# That is the point: an RCE in the Integral process must not be able to widen
+# its own blast radius by constructing different arguments.
+#
+# Usage:
+#   integral-sandbox-run --check                    preflight; exits 0 when usable
+#   integral-sandbox-run --stop <unit>              kill the scope and everything in it
+#   integral-sandbox-run <unit> <profile> <cwd> <cmd>
+#
+# See docs/fake-backend-spec.md §9. This is Tier 1 (same kernel, separate uid +
+# cgroup); it does NOT make the host safe for untrusted code.
+set -eu
+
+# ---- configuration (edit at install time; never taken from the caller) ----
+SBX_USER=integral-sbx
+SBX_GROUP=integral-sbx
+ARTIFACT_ROOT=/opt/integral/data/artifacts
+
+SYSTEMD_RUN=/usr/bin/systemd-run
+SYSTEMCTL=/usr/bin/systemctl
+SETPRIV=/usr/bin/setpriv
+
+die() { echo "integral-sandbox-run: $1" >&2; exit 64; }
+
+# Unit names reach `systemd-run --unit=` and `systemctl stop`, so pin them to a
+# fixed prefix and a character set with no path or shell metacharacters in it.
+# runner.js suffixes a step name (-install, -schema, -seed), hence the dash.
+validate_unit() {
+  case "$1" in
+    integral-sbx-?*) ;;
+    *) die "invalid unit name '$1'" ;;
+  esac
+  case "$1" in
+    *[!a-z0-9_-]*) die "invalid unit name '$1'" ;;
+  esac
+}
+
+# ---- --check: prove the whole mechanism is usable before Integral relies on it ----
+if [ "${1:-}" = "--check" ]; then
+  for bin in "$SYSTEMD_RUN" "$SYSTEMCTL" "$SETPRIV"; do
+    [ -x "$bin" ] || die "missing $bin"
+  done
+  id -u "$SBX_USER" >/dev/null 2>&1 || die "user $SBX_USER does not exist"
+  [ -d "$ARTIFACT_ROOT" ] || die "artifact root $ARTIFACT_ROOT does not exist"
+  # Echoed so preflight can confirm it reached *this* script and not a stale
+  # copy. The full group list (not just the primary gid) is what lets
+  # confine.js check whether the sandbox user can reach .env or integral.db
+  # through a supplementary group.
+  echo "ok $(id -u "$SBX_USER") $(id -g "$SBX_USER") $(id -G "$SBX_USER" | tr ' ' ',')"
+  exit 0
+fi
+
+# ---- --stop: killing the scope kills the whole cgroup ----
+# This is what closes the `setsid` escape from the old process-group teardown:
+# nothing started inside the scope can detach from it.
+if [ "${1:-}" = "--stop" ]; then
+  UNIT=${2:-}
+  validate_unit "$UNIT"
+  "$SYSTEMCTL" stop "$UNIT.scope" >/dev/null 2>&1 || true
+  exit 0
+fi
+
+[ $# -eq 4 ] || die "usage: <unit> <profile> <cwd> <cmd>"
+UNIT=$1
+PROFILE=$2
+CWD=$3
+CMD=$4
+
+# ---- validate everything the caller controls ----
+validate_unit "$UNIT"
+
+# Resolve symlinks before the prefix test, so a symlinked artifact dir cannot
+# point the sandbox's working directory somewhere else on the host.
+REAL_CWD=$(readlink -f "$CWD" 2>/dev/null) || die "cannot resolve cwd '$CWD'"
+[ -d "$REAL_CWD" ] || die "cwd is not a directory: '$CWD'"
+REAL_ROOT=$(readlink -f "$ARTIFACT_ROOT" 2>/dev/null) || die "cannot resolve artifact root"
+case "$REAL_CWD" in
+  "$REAL_ROOT"/*) ;;
+  *) die "cwd '$REAL_CWD' is outside $REAL_ROOT" ;;
+esac
+
+# ---- per-profile limits ----
+# Address filtering is cgroup-level (eBPF), so unlike the stub proxy in
+# stubs.js it applies to every client regardless of whether it honours proxy
+# env vars. It matches the *peer* address in both directions.
+case "$PROFILE" in
+  app)
+    # Only 127.0.0.1: the ephemeral Postgres and the stub proxy live there, and
+    # so does the port Integral proxies in to. Integral's own listener is on
+    # 127.0.0.2 (INTEGRAL_BIND_HOST), so this denies the sandbox any route to
+    # the dashboard API while leaving the proxy path working.
+    set -- -p MemoryMax=1G -p CPUQuota=100% -p TasksMax=256 \
+           -p RuntimeMaxSec=3600 \
+           -p IPAddressDeny=any -p IPAddressAllow=127.0.0.1/32
+    ;;
+  install)
+    # npm/pip need the real internet. Deny link-local (cloud instance metadata
+    # — IAM credentials live at 169.254.169.254), RFC1918 (the host's other
+    # services and anything else on the VPC), and loopback. The narrower
+    # 127.0.0.53/32 allow wins over the /8 deny so systemd-resolved still
+    # answers DNS; if this box resolves some other way, adjust here.
+    set -- -p MemoryMax=2G -p CPUQuota=200% -p TasksMax=512 \
+           -p RuntimeMaxSec=600 \
+           -p IPAddressAllow=any \
+           -p IPAddressDeny=169.254.0.0/16 -p IPAddressDeny=fe80::/10 \
+           -p IPAddressDeny=10.0.0.0/8 -p IPAddressDeny=172.16.0.0/12 \
+           -p IPAddressDeny=192.168.0.0/16 \
+           -p IPAddressDeny=127.0.0.0/8 -p IPAddressAllow=127.0.0.53/32
+    ;;
+  *) die "unknown profile '$PROFILE'" ;;
+esac
+
+SBX_UID=$(id -u "$SBX_USER") || die "user $SBX_USER does not exist"
+SBX_GID=$(id -g "$SBX_USER") || die "group for $SBX_USER not found"
+
+cd "$REAL_CWD" || die "cannot enter $REAL_CWD"
+
+# 002, not the default 022: files and directories the sandbox creates
+# (node_modules, .integral-venv) must stay group-writable. The artifacts tree
+# is setgid integral-sbx, so they inherit that group, and the Integral service
+# user is a member of it — which is what lets the plain fs.rmSync() calls in
+# purge.js / retention.js / github.js still delete them. Without this the
+# retention sweep dies on EPERM the first time a sandbox has run.
+umask 002
+
+# Scope units carry cgroup properties but not exec properties (User=, Group=),
+# so the uid drop is setpriv's job, inside the scope.
+exec "$SYSTEMD_RUN" --scope --quiet --unit="$UNIT" "$@" -- \
+  "$SETPRIV" --reuid="$SBX_UID" --regid="$SBX_GID" --init-groups \
+             --inh-caps=-all --no-new-privs \
+  -- /bin/sh -c "$CMD"

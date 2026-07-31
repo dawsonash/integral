@@ -6,41 +6,93 @@ Postgres/S3 until backups or write volume actually hurt.
 
 ## One-time setup (Ubuntu/Debian VPS)
 
+The app lives in `/opt/integral/app`, one level below the service user's home. Don't
+clone straight into `/opt/integral`: `useradd -d` makes that the home directory, and
+`.ssh/` (deploy key) has no business sitting inside a git working tree.
+
 ```bash
 # 1. Node LTS + a system user + the app
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+sudo apt install -y nodejs git
 sudo useradd -r -m -d /opt/integral integral
-sudo -u integral git clone <your-repo> /opt/integral
-cd /opt/integral && sudo -u integral npm ci --omit=dev
+sudo -u integral git clone <your-repo> /opt/integral/app
+cd /opt/integral/app && sudo -u integral npm ci --omit=dev
 
 # 2. Config
-sudo -u integral cp .env.example /opt/integral/.env   # then fill it in
-# Required for production: INTEGRAL_APP_URL, INTEGRAL_RUN_HOST,
+sudo -u integral cp .env.example /opt/integral/app/.env   # then fill it in
+# Required for production: INTEGRAL_APP_URL, INTEGRAL_RUN_HOST, INTEGRAL_BIND_HOST,
 # GITHUB_CLIENT_ID/SECRET, STRIPE_* (when charging), RESEND_API_KEY.
+# GitHub OAuth is not optional: NODE_ENV=production disables dev login
+# (server/lib/auth.js), so without it nobody can sign in at all.
 
-# 3. Process supervision
-sudo cp deploy/integral.service /etc/systemd/system/
-sudo systemctl enable --now integral
+# 3. Process supervision. The unit ships with /opt/integral paths; rewrite them
+#    for the app subdir — this fixes WorkingDirectory, EnvironmentFile and
+#    ReadWritePaths in one pass.
+sed 's|/opt/integral|/opt/integral/app|g' deploy/integral.service \
+  | sudo tee /etc/systemd/system/integral.service >/dev/null
+# ReadWritePaths is bind-mounted at unit start, so the data dir must already
+# exist — otherwise systemd fails with status=226/NAMESPACE and the process
+# never runs far enough for server/db.js to create it.
+sudo install -d -o integral -g integral -m 0751 /opt/integral/app/data
+sudo systemctl daemon-reload && sudo systemctl enable --now integral
+curl -sI http://127.0.0.1:4000/    # expect a status line before touching Caddy
 
-# 4. TLS + reverse proxy (two DNS A records → this box: app. and run.)
-sudo apt install caddy
-sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   # edit domains first
-sudo systemctl reload caddy
+# 4. TLS + reverse proxy (two DNS records → this box: app. and run.)
+#    Caddy is not in the default Ubuntu/Debian repos.
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install -y caddy
+sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   # edit domains + upstream first
+sudo systemctl reload caddy && journalctl -u caddy -f   # watch certs issue
 
 # 5. Backups
 #    - SQLite: litestream (deploy/litestream.yml → /etc/litestream.yml)
 #    - artifacts + event logs: nightly cron of deploy/backup-files.sh
 ```
 
+**Set `INTEGRAL_BIND_HOST` even with the sandbox off** — use `127.0.0.1`, and match the
+`reverse_proxy` upstream in the Caddyfile (which ships as `127.0.0.2` for the sandbox
+case). Unset is the one genuinely unsafe value: Node then listens on every interface, so
+port 4000 is reachable publicly, bypassing TLS, and `INTEGRAL_TRUST_PROXY=1` lets anyone
+hitting it directly forge `X-Forwarded-For` past the rate limiter.
+
+**Before Caddy runs, point DNS at the box** — `app.` and `run.`, A and/or AAAA — and open
+inbound 80 **and** 443. Port 80 is not optional; ACME validation uses it. If you publish
+AAAA records, verify the address is really the server's (`ip -6 addr show scope global`):
+Let's Encrypt prefers IPv6 when it exists, so a wrong AAAA fails issuance on both names
+while IPv4 looks perfectly healthy, and the error does not mention IPv6.
+
 ## Locking down secrets (do this regardless)
 
-`.env` and `integral.db` land at 0644 — world-readable — and hold the live Stripe
-key, the OAuth secret, the session signing secret, and every user row:
+`.env` and everything under `data/` land at 0644 — world-readable — and hold the live
+Stripe key, the OAuth secret, the session signing secret, and every user row:
 
 ```bash
-sudo chmod 0600 /opt/integral/.env
-sudo chmod 0640 /opt/integral/data/integral.db
-sudo chmod 0751 /opt/integral/data        # traversable, not listable
+sudo chmod 0600 /opt/integral/app/.env
+sudo chmod 0751 /opt/integral/app/data    # traversable, not listable
 ```
+
+Chmod'ing `integral.db` alone is not enough. SQLite writes `-wal` and `-shm` alongside it
+holding the same rows, and recreates both on every connection — so the fix has to be the
+process umask, not a one-off chmod. Add to the `[Service]` block of the unit:
+
+```ini
+UMask=0027
+```
+
+That covers the WAL pair and the `artifacts/` + `events/` dirs (uploaded HTML and session
+recordings) as they are created. Files already on disk need a one-time pass:
+
+```bash
+sudo chmod 0640 /opt/integral/app/data/integral.db*
+sudo chmod 0750 /opt/integral/app/data/artifacts /opt/integral/app/data/events
+```
+
+Note `data/` is traversable (`0751`), so world-readable files in it stay reachable by
+anyone who knows the filename — being unlistable is not the protection it looks like.
 
 ## Server-rendered tests (the fake-backend sandbox)
 
@@ -64,11 +116,12 @@ echo 'integral ALL=(root) NOPASSWD:SETENV: /usr/local/bin/integral-sandbox-run' 
 
 # 3. Shared ownership of the artifacts tree. setgid so everything created
 #    inside inherits the group (the wrapper's umask 002 makes it writable).
-sudo chgrp -R integral-sbx /opt/integral/data/artifacts
-sudo chmod 2770 /opt/integral/data/artifacts
+sudo chgrp -R integral-sbx /opt/integral/app/data/artifacts
+sudo chmod 2770 /opt/integral/app/data/artifacts
 
-# 4. Keep this API off 127.0.0.1 — see below.
-#    .env: INTEGRAL_BIND_HOST=127.0.0.2   (Caddyfile upstream already matches)
+# 4. Keep this API off 127.0.0.1 — see below. Change BOTH, together:
+#    .env: INTEGRAL_BIND_HOST=127.0.0.2
+#    /etc/caddy/Caddyfile: reverse_proxy 127.0.0.2:4000
 sudo systemctl restart integral && sudo systemctl reload caddy
 
 # 5. Verify. Refuses to run if anything above is missing or misconfigured.
@@ -86,6 +139,14 @@ Integral deletes those dirs with plain `fs.rmSync` (`lib/purge.js`,
 `lib/retention.js`, `lib/github.js`) and `force: true` does not swallow EPERM —
 so without the setgid bit and the shared group, a repo re-pull fails and the
 retention sweep logs an error for every dir it cannot remove.
+
+**Re-check `UMask` if you enable this.** The hardening section above sets `UMask=0027` on
+the unit, which is right for a box without the sandbox. Here the artifacts tree is shared
+group-writable (`2770`) with `integral-sbx`, and dirs Integral itself creates under it
+land `0750` — group-readable but not group-writable. Whether that matters depends on
+which side creates a given dir first, so verify a full boot-and-purge cycle rather than
+assuming either way. This is why `UMask` is documented but not shipped in
+`integral.service`.
 
 **Why `INTEGRAL_BIND_HOST=127.0.0.2`.** cgroup address filtering is per-address,
 not per-port. The sandbox needs `127.0.0.1` for its throwaway Postgres and the
@@ -130,6 +191,6 @@ expiry, orphaned files). Prefer cron? `node scripts/sweep.js` runs one sweep.
 ## Updating
 
 ```bash
-cd /opt/integral && sudo -u integral git pull && sudo -u integral npm ci --omit=dev
+cd /opt/integral/app && sudo -u integral git pull && sudo -u integral npm ci --omit=dev
 sudo systemctl restart integral
 ```

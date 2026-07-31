@@ -54,3 +54,17 @@ test('dashboard host still serves the landing page', async () => {
   // Structural marker, not headline copy — see the note in api.test.js.
   assert.match(res.body, /class="lnav"/);
 });
+
+// The privacy page is served on the run host and its footer links /contact, so
+// the contact page has to be on the run surface or that link 404s for testers.
+test('run host serves the contact page', async () => {
+  const res = await get('/contact', 'run.test');
+  assert.equal(res.status, 200);
+});
+
+// The address is assembled by JavaScript specifically so it never appears in the
+// served HTML. If someone inlines it as plain text later, this catches it.
+test('contact page never ships a literal email address', async () => {
+  const res = await get('/contact', 'run.test');
+  assert.doesNotMatch(res.body, /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/);
+});

@@ -15,9 +15,10 @@ if (process.env.INTEGRAL_TRUST_PROXY) app.set('trust proxy', 1);
 // share an origin with each other — that's all same-origin recording needs.
 const RUN_HOST = process.env.INTEGRAL_RUN_HOST;
 // favicon.* is on the list because the run host serves real Integral chrome —
-// the take flow and the privacy/terms pages — and those tabs should carry the
-// logo like every other page.
-const RUN_SURFACE = /^\/(t\/|p\/|api\/take\/|__integral\/|vendor\/|style\.css$|take\.js$|favicon\.(svg|png)$|privacy|terms)/;
+// the take flow and the privacy/terms/contact pages — and those tabs should
+// carry the logo like every other page. /contact is here because the privacy
+// page's footer links it, and testers have no other way to reach the operator.
+const RUN_SURFACE = /^\/(t\/|p\/|api\/take\/|__integral\/|vendor\/|style\.css$|take\.js$|favicon\.(svg|png)$|privacy|terms|contact)/;
 app.use((req, res, next) => {
   if (!RUN_HOST) return next();
   if (req.hostname === RUN_HOST) {
@@ -84,6 +85,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Legal pages, reachable from both origins (the consent gate links /privacy).
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html')));
 app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'terms.html')));
+app.get('/contact', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'contact.html')));
 
 app.use(require('./routes/auth'));
 app.use(require('./routes/github'));

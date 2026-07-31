@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact — Integral</title>
+<link rel="icon" href="/favicon.png" sizes="64x64">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="topbar"><a class="brand" href="/">◱ Integral<span>.</span></a></div>
+<div class="container">
+  <div class="card">
+    <h1>Contact</h1>
+    <p class="muted">Integral is run by one developer. Email is the only support channel.</p>
+
+    <h2>Email</h2>
+    <p id="contact-email"></p>
+    <noscript>
+      <p>dawsonash22 <b>at</b> gmail <b>dot</b> com</p>
+      <p class="muted">Written out because the address is assembled by JavaScript to keep
+      scrapers away — replace " at " with @ and " dot " with a period.</p>
+    </noscript>
+
+    <h2>What to expect</h2>
+    <p>Bug reports, billing questions, data-export and deletion requests, and abuse reports all
+    go to the same address. Expect a reply within a few days; there is no uptime or response-time
+    guarantee (see the <a href="/terms">terms of service</a>).</p>
+
+    <p class="muted">See also the <a href="/privacy">privacy policy</a> and
+    <a href="/terms">terms of service</a>.</p>
+  </div>
+</div>
+
+<footer class="lfooter">
+  <a class="brand" href="/">◱ Integral<span>.</span></a>
+  <span style="flex:1"></span>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+  <a href="/contact">Contact</a>
+</footer>
+
+<script>
+  // Assembled at runtime so the address never appears in the served HTML. This is
+  // the only script on a legal-style page; the <noscript> block above covers it.
+  var user = ['dawsonash', '22'].join('');
+  var domain = ['gmail', 'com'].join('.');
+  var addr = user + '@' + domain;
+  var a = document.createElement('a');
+  a.href = 'mai' + 'lto:' + addr;
+  a.textContent = addr;
+  document.getElementById('contact-email').appendChild(a);
+</script>
+</body>
+</html>

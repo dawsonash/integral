@@ -14,7 +14,10 @@ if (process.env.INTEGRAL_TRUST_PROXY) app.set('trust proxy', 1);
 // scripts can't touch the dev-facing surface. The artifact and recorder still
 // share an origin with each other — that's all same-origin recording needs.
 const RUN_HOST = process.env.INTEGRAL_RUN_HOST;
-const RUN_SURFACE = /^\/(t\/|p\/|api\/take\/|__integral\/|vendor\/|style\.css$|take\.js$|privacy|terms)/;
+// favicon.* is on the list because the run host serves real Integral chrome —
+// the take flow and the privacy/terms pages — and those tabs should carry the
+// logo like every other page.
+const RUN_SURFACE = /^\/(t\/|p\/|api\/take\/|__integral\/|vendor\/|style\.css$|take\.js$|favicon\.(svg|png)$|privacy|terms)/;
 app.use((req, res, next) => {
   if (!RUN_HOST) return next();
   if (req.hostname === RUN_HOST) {

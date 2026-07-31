@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The ◱ of the wordmark, drawn as paths rather than set as text: a tab
+       icon is rasterized without page fonts, and U+25F1 is missing from
+       enough system fonts to render as a tofu box.
+
+       Knocked out of a solid tile in the accent orange from style.css rather
+       than drawn as a bare outline, so it holds contrast against both a light
+       and a dark tab strip without depending on prefers-color-scheme support
+       inside a favicon. -->
+  <rect width="32" height="32" rx="6" fill="#c2410c"/>
+  <!-- Frame: 24x24 outer, 18x18 hole. The 3-unit rule is 1.5px once Chrome
+       rasterizes the tab icon at 16px — thinner than that and it greys out. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="M4 4h24v24H4V4Zm3 3v18h18V7H7Z"/>
+  <!-- Lower-left quadrant: exactly a quarter of the 18x18 interior. -->
+  <path fill="#ffffff" d="M7 16h9v9H7v-9Z"/>
+</svg>

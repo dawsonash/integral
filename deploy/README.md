@@ -188,9 +188,92 @@ session cookie is never read on the run origin.
 `server/index.js` sweeps daily in-process (plan retention windows, free-tier link
 expiry, orphaned files). Prefer cron? `node scripts/sweep.js` runs one sweep.
 
-## Updating
+## Updating to the latest master
+
+The box deploys `origin/master` and nothing else. Everything that touches the working
+tree runs as `integral`, with `-H`: without it `sudo` can leave `HOME` pointing at
+root's, git never finds the deploy key in `/opt/integral/.ssh`, and the fetch fails
+with a permission error that reads like GitHub's fault. Running any of this as root
+also leaves root-owned files in the tree that break the *next* update.
 
 ```bash
-cd /opt/integral/app && sudo -u integral git pull && sudo -u integral npm ci --omit=dev
+cd /opt/integral/app
+PREV=$(sudo -u integral -H git rev-parse --short HEAD)   # rollback target
+echo "$PREV"                                             # write it down
+
+sudo -u integral -H git fetch origin master
+sudo -u integral -H git log --oneline HEAD..origin/master   # what is about to ship
+sudo -u integral -H git status --porcelain                  # expect no output
+```
+
+`git status` should be silent. `.env`, `data/`, and `node_modules/` are gitignored, and
+the unit file and Caddyfile were copied *out* of the tree during setup, so nothing on a
+healthy box edits it in place — output here means someone patched production by hand,
+and the reset below would throw that away. Find out what it is first.
+
+```bash
+# Take master exactly. reset --hard, not pull: no merge commits on a box nobody
+# commits from, and no chance of a divergence that leaves a half-merged tree.
+sudo -u integral -H git reset --hard origin/master
+```
+
+Dependencies only when the lockfile actually moved — `npm ci` deletes `node_modules`
+outright and rebuilding it costs minutes on a 2 vCPU box:
+
+```bash
+if ! sudo -u integral -H git diff --quiet "$PREV" HEAD -- package-lock.json; then
+  # Stop first in this case only. npm ci empties node_modules under the running
+  # process, and anything it has not required yet (the sandbox modules load
+  # lazily) would throw until the restart.
+  sudo systemctl stop integral
+  sudo -u integral -H npm ci --omit=dev
+  sudo systemctl start integral
+else
+  sudo systemctl restart integral
+fi
+```
+
+Then confirm what is actually running:
+
+```bash
+sudo -u integral -H git rev-parse --short HEAD   # should equal origin/master
+systemctl status integral --no-pager
+curl -sI http://127.0.0.1:4000/                  # local first: skips Caddy and DNS
+curl -sI https://app.<domain>/ | head -1
+journalctl -u integral -n 30 --no-pager
+```
+
+**Schema changes apply themselves on boot.** `server/db.js` runs `CREATE TABLE IF NOT
+EXISTS` plus a list of `ensureColumn` calls at require time, so a restart is the
+migration. There is no separate migrate step and no down-migration — `ensureColumn` only
+ever *adds* columns, which is what makes the rollback below safe: old code ignores
+columns it does not know about.
+
+**Pick the moment if tests are live.** `public/take.js` empties its buffer before posting
+and never retries, so a restart during an active session drops up to ~2.5s of that
+tester's recording. Nothing logs requests — not the app, and not Caddy without a `log`
+directive — so the journal will not tell you. Ask the database instead (`apt install -y
+sqlite3` if it is missing; `-readonly` so this can never be the thing that corrupts it):
+
+```bash
+sudo -u integral sqlite3 -readonly /opt/integral/app/data/integral.db \
+  "SELECT count(*) FROM sessions
+    WHERE status='started' AND started_at > (strftime('%s','now')-600)*1000;"
+```
+
+`started_at` is `Date.now()`, hence the ×1000. The 10-minute floor matters: a tester who
+closes the tab without the `/abandon` beacon landing leaves `status='started'` behind
+forever, so an unbounded count reads as busy on an idle box.
+
+### Rolling back
+
+Code-only, since the database is forward-compatible by the note above:
+
+```bash
+sudo -u integral -H git reset --hard "$PREV"      # or the SHA you wrote down
+sudo -u integral -H npm ci --omit=dev             # only if the lockfile moved
 sudo systemctl restart integral
 ```
+
+If `$PREV` is gone from the shell, `sudo -u integral -H git reflog` on the box still has
+it — `reset --hard` leaves the old commit reachable there.

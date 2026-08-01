@@ -44,6 +44,28 @@ async function ensureCustomer(s, user) {
   return customer.id;
 }
 
+// Statuses Stripe reports for a subscription that is still current in billing
+// terms. past_due is one of them: dunning is under way but the customer has not
+// lost access yet. The webhook decides plan state from this same list, so a
+// subscription that blocks a second checkout is exactly one that grants a plan.
+const ACTIVE_STATUSES = ['active', 'trialing', 'past_due'];
+
+// Checkout knows nothing about what this customer already bought, so without a
+// guard a second trip through it creates a second subscription on the same
+// customer — a genuine double charge. The webhook would then overwrite
+// users.stripe_subscription_id with whichever event landed last, leaving the
+// first subscription billing with nothing in our database pointing at it.
+//
+// Ask Stripe rather than trusting users.stripe_subscription_id: that column is
+// populated by the webhook, and a double-click beats the webhook.
+//
+// status:'all' because the list endpoint takes a single status and we care
+// about three. 100 is far past what any real customer accumulates.
+async function hasLiveSubscription(s, customerId) {
+  const subs = await s.subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
+  return subs.data.some((sub) => ACTIVE_STATUSES.includes(sub.status));
+}
+
 // ---------- seat quantity ----------
 
 // Push the team's billable headcount onto its subscription. Stripe has no
@@ -93,6 +115,32 @@ router.post('/api/billing/checkout', express.json(), requireUser, async (req, re
   const base = priceId(plan, interval);
   if (!base) {
     return res.status(503).json({ error: 'price_not_configured', message: `No Stripe price configured for ${plan} / ${interval}.` });
+  }
+
+  // Before anything with a side effect — a customer with no Stripe customer id
+  // cannot have a subscription, so first-time buyers skip the round trip, and
+  // running this ahead of team creation means a rejected checkout cannot leave
+  // an orphaned workspace behind.
+  if (req.user.stripe_customer_id) {
+    let subscribed;
+    try {
+      subscribed = await hasLiveSubscription(s, req.user.stripe_customer_id);
+    } catch (e) {
+      // Fail closed. Only returning customers reach this branch, and for them
+      // being billed twice for the same thing is worse than being asked to try
+      // again.
+      console.error('[billing] subscription check failed:', e.message);
+      return res.status(502).json({
+        error: 'billing_check_failed',
+        message: 'Could not verify your current subscription. Please try again.',
+      });
+    }
+    if (subscribed) {
+      return res.status(409).json({
+        error: 'already_subscribed',
+        message: 'You already have an active subscription. Manage it from the billing portal.',
+      });
+    }
   }
 
   // Buying Team provisions the workspace up front, so the buyer can invite
@@ -252,7 +300,7 @@ function webhook(req, res) {
       ).run(plan === 'team' ? 'individual' : plan, interval, String(obj.customer), String(obj.subscription), user.id);
     }
   } else if (event.type === 'customer.subscription.updated') {
-    const active = ['active', 'trialing', 'past_due'].includes(obj.status);
+    const active = ACTIVE_STATUSES.includes(obj.status);
     const team = teamForEvent(obj);
     if (team) {
       setTeamPlan(team, active ? 'team' : 'free', obj.id);
@@ -293,4 +341,4 @@ function recordSeatItem(subscriptionId, teamId) {
     .catch((e) => console.error('[billing] seat item lookup failed:', e.message));
 }
 
-module.exports = { router, webhook, syncSeats, setTeamPlan, setUserPlan, stripe };
+module.exports = { router, webhook, syncSeats, setTeamPlan, setUserPlan, stripe, hasLiveSubscription, ACTIVE_STATUSES };

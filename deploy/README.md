@@ -253,10 +253,30 @@ flags to mean what they sound like.
 Plan state moves only when the webhook fires, so a successful Checkout proves nothing on
 its own. After a test purchase, confirm the row actually changed:
 
+There is no `sqlite3` binary on the box and no need to install one — `better-sqlite3` is
+already a dependency. Run it as `integral`, never as root: SQLite recreates `-wal` and
+`-shm` on every connection, and root-owned ones break the service.
+
 ```bash
-sqlite3 /opt/integral/app/data/integral.db \
-  "SELECT login, plan, billing_interval, stripe_subscription_id FROM users WHERE login='<you>';"
+sudo -u integral -H node - <<'EOF'
+const path = '/opt/integral/app';
+const db = require(path + '/node_modules/better-sqlite3')(path + '/data/integral.db', { readonly: true });
+console.log(db.prepare('SELECT login, plan, billing_interval, stripe_subscription_id FROM users WHERE login = ?').get('<you>'));
+EOF
 ```
+
+Drop `{ readonly: true }` to write — that is also how a comp account is granted:
+
+```sql
+UPDATE users SET plan = 'unlimited', plan_lapsed_at = NULL WHERE login = '<you>';
+```
+
+`unlimited` is the internal comp grant (`server/lib/plans.js`). It survives everything:
+`planFor()` returns it before consulting team membership, `setUserPlan()` refuses to move
+it, and `graceFor()` never starts a lapse clock against it. It grants *infinite* volume
+rather than Individual's 10 tests / 500 responses. Setting `plan = 'individual'` instead
+gives real Individual limits but is **not** durable — `individual` is in `PAID_PLANS`, so
+any subscription webhook for that customer resets it.
 
 `plan` should be `individual` (or `team`) with a non-null subscription id. If `plan` is
 still `free` but `stripe_customer_id` is set, Checkout worked and the webhook did not

@@ -6,6 +6,7 @@ const { requireUser, upsertUser, githubConfigured, devLoginEnabled } = require('
 const { planFor, scopeFor, monthStart, graceFor } = require('../lib/plans');
 const { billingConfigured } = require('../lib/prices');
 const teams = require('../lib/teams');
+const attribution = require('../lib/attribution');
 const { deleteUserData } = require('../lib/purge');
 
 const router = express.Router();
@@ -80,7 +81,9 @@ router.get('/auth/github/callback', async (req, res) => {
       name: gh.name,
       email,
       avatarUrl: gh.avatar_url,
+      attribution: attribution.read(req),
     });
+    attribution.clear(res);
     // Only the connect flow's token carries repo scope; a plain sign-in token
     // is useless for repos and must not overwrite a stored repo-scoped one.
     if (parseCookies(req).integral_oauth_connect === '1') {
@@ -165,6 +168,15 @@ router.get('/api/me', requireUser, (req, res) => {
     },
     usage: { activeTests, responsesThisMonth },
   });
+});
+
+// Signup attribution report. 'unlimited' is the internal comp/dev grant (see
+// lib/plans.js), so gating on it keeps this to operators — paying customers
+// have no business reading how the business acquires people.
+router.get('/api/attribution', requireUser, (req, res) => {
+  if (req.user.plan !== 'unlimited') return res.status(403).json({ error: 'forbidden' });
+  const days = Number(req.query.days);
+  res.json(attribution.report({ days: Number.isFinite(days) && days > 0 ? days : null }));
 });
 
 // Data deletion = account deletion (GDPR minimum): removes the user and every

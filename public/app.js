@@ -35,6 +35,7 @@
         fmtDate(me.graceEndsAt) + ' unless you resubscribe.';
     }
     loadTeam();
+    loadAttribution();
     loadRepos();
     loadTests();
   }
@@ -164,6 +165,105 @@
     if (!confirm('Delete this team? The subscription is cancelled and every test reverts to your personal account.')) return;
     fetch('/api/team', { method: 'DELETE' }).then(function () { location.reload(); });
   };
+
+  // ---------- signup attribution (operators only) ----------
+
+  // No plan check here on purpose: /api/attribution 403s anyone who isn't on
+  // the internal 'unlimited' grant, so showing the card on a successful
+  // response keeps the UI and the server from ever disagreeing.
+  function loadAttribution() {
+    var days = document.getElementById('attrrange').value;
+    fetch('/api/attribution' + (days ? '?days=' + days : ''))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j) return show('attrcard', false);
+        show('attrcard', true);
+        renderAttribution(j);
+      })
+      .catch(function () { show('attrcard', false); });
+  }
+
+  function pct(n, of) { return of ? Math.round((n / of) * 100) + '%' : '—'; }
+
+  function stat(n, k) {
+    var d = document.createElement('div');
+    d.className = 'stat';
+    d.innerHTML = '<div class="n"></div><div class="k"></div>';
+    d.querySelector('.n').textContent = n;
+    d.querySelector('.k').textContent = k;
+    return d;
+  }
+
+  // Bars are drawn as a share of the busiest channel's signups, and both series
+  // use that same scale — 'now paying' is a subset of 'signups', so scaling
+  // them separately would make a channel that converts nobody look identical to
+  // one that converts everybody.
+  function renderAttribution(j) {
+    var stats = document.getElementById('attrstats');
+    stats.innerHTML = '';
+    stats.appendChild(stat(j.totals.signups, 'signups'));
+    stats.appendChild(stat(j.totals.paid, 'now paying'));
+    stats.appendChild(stat(pct(j.totals.paid, j.totals.signups), 'conversion'));
+
+    var chart = document.getElementById('attrchart');
+    chart.innerHTML = '';
+    show('attrempty', j.sources.length === 0);
+    var max = j.sources.reduce(function (m, s) { return Math.max(m, s.signups); }, 0);
+
+    j.sources.forEach(function (s) {
+      var chan = document.createElement('div');
+      chan.className = 'chan';
+
+      var cat = document.createElement('div');
+      cat.className = 'cat';
+      cat.textContent = s.source;
+      cat.title = s.source; // long hostnames ellipsize; the tooltip has the rest
+      chan.appendChild(cat);
+
+      [['s1', s.signups, 'signups'], ['s2', s.paid, 'now paying']].forEach(function (row) {
+        var track = document.createElement('div');
+        track.className = 'track';
+        track.title = s.source + ' — ' + row[1] + ' ' + row[2];
+
+        var fill = document.createElement('span');
+        fill.className = 'fill ' + row[0] + (row[1] ? '' : ' empty');
+        fill.style.width = max ? (row[1] / max) * 100 + '%' : '0';
+        track.appendChild(fill);
+
+        var val = document.createElement('span');
+        val.className = 'val' + (row[1] ? '' : ' zero');
+        val.textContent = row[1];
+        track.appendChild(val);
+
+        chan.appendChild(track);
+      });
+      chart.appendChild(chan);
+    });
+
+    var tbody = document.querySelector('#attrtable tbody');
+    tbody.innerHTML = '';
+    j.sources.forEach(function (s) {
+      // Only a channel running more than one campaign needs a total row —
+      // otherwise the total would just restate the single row above it.
+      var rows = s.campaigns.length > 1
+        ? s.campaigns.concat([{ campaign: null, signups: s.signups, paid: s.paid, total: true }])
+        : [{ campaign: s.campaigns.length ? s.campaigns[0].campaign : null, signups: s.signups, paid: s.paid }];
+      rows.forEach(function (r, i) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td class="js-src"></td><td class="js-camp muted"></td>' +
+          '<td class="js-n"></td><td class="js-p"></td><td class="js-r muted"></td>';
+        tr.querySelector('.js-src').textContent = i === 0 ? s.source : '';
+        tr.querySelector('.js-camp').textContent = r.campaign || (r.total ? 'all campaigns' : '—');
+        tr.querySelector('.js-n').textContent = r.signups;
+        tr.querySelector('.js-p').textContent = r.paid;
+        tr.querySelector('.js-r').textContent = pct(r.paid, r.signups);
+        if (r.total) tr.style.fontWeight = '600';
+        tbody.appendChild(tr);
+      });
+    });
+  }
+
+  document.getElementById('attrrange').onchange = loadAttribution;
 
   // ---------- repo picker ----------
 

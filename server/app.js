@@ -37,6 +37,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// First-touch ad attribution. Must sit above the '/' front door and the static
+// mount so a landing page view still stamps the cookie, and below the origin
+// split so it can read req.isRunHost and stay off the testee surface.
+app.use(require('./lib/attribution').middleware);
+
 // Stripe webhook first: signature verification needs the raw body, so it must
 // beat the JSON parser.
 app.post('/webhooks/stripe', express.raw({ type: '*/*' }), billing.webhook);

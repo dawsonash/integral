@@ -32,7 +32,10 @@ function requireUserPage(req, res, next) {
   next();
 }
 
-function upsertUser({ githubId, login, name, email, avatarUrl, plan }) {
+// `attribution` is written on INSERT only. That's what makes the numbers
+// first-touch: a returning user signing in through a fresh ad link keeps the
+// channel that actually acquired them.
+function upsertUser({ githubId, login, name, email, avatarUrl, plan, attribution }) {
   const existing = db.prepare('SELECT * FROM users WHERE github_id = ?').get(githubId);
   if (existing) {
     db.prepare('UPDATE users SET login = ?, name = ?, email = ?, avatar_url = ? WHERE id = ?').run(
@@ -41,8 +44,16 @@ function upsertUser({ githubId, login, name, email, avatarUrl, plan }) {
     return getUser.get(existing.id);
   }
   const info = db
-    .prepare('INSERT INTO users (github_id, login, name, email, avatar_url, plan, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(githubId, login, name || null, email || null, avatarUrl || null, plan || 'free', Date.now());
+    .prepare(
+      `INSERT INTO users (github_id, login, name, email, avatar_url, plan, signup_source, signup_campaign, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      githubId, login, name || null, email || null, avatarUrl || null, plan || 'free',
+      (attribution && attribution.source) || null,
+      (attribution && attribution.campaign) || null,
+      Date.now()
+    );
   return getUser.get(info.lastInsertRowid);
 }
 

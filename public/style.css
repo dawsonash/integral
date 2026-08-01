@@ -139,3 +139,41 @@ a { color: var(--accent); }
 @media (max-width: 700px) {
   .plangrid { grid-template-columns: 1fr; }
 }
+
+/* Signup attribution chart (operator-only card). Two categorical series on one
+   shared scale — both count people, so a bar's length means the same thing on
+   either row. The hues are validated for colorblind separation against the
+   card surface; --accent is deliberately not one of them, since a chart mark
+   that matches the link colour reads as clickable. */
+:root {
+  --series-1: #1d4ed8; /* signups */
+  --series-2: #c2410c; /* of those, now paying */
+}
+.legend { display: flex; gap: 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.legend span { display: flex; gap: 6px; align-items: center; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+/* One block per channel, so the gap *between* channels can be wider than the
+   gap between a channel's two series — that spacing is what makes the pairs
+   read as pairs. Every block shares a column template, so the bars still sit
+   on one common scale across the whole chart. Capped in width because a bar
+   1500px long is harder to compare than a bar 600px long, not easier. */
+.chart { display: flex; flex-direction: column; gap: 12px; max-width: 780px; margin: 16px 0 4px; }
+.chan { display: grid; grid-template-columns: minmax(80px, 150px) 1fr; gap: 2px 12px; }
+.chan .cat {
+  grid-row: 1 / span 2; align-self: center; font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chan .track { display: flex; align-items: center; gap: 8px; min-height: 14px; }
+.chan .fill { height: 10px; border-radius: 0 4px 4px 0; min-width: 3px; }
+/* A zero has to render as nothing at all — a minimum-width stub would read as
+   "a few", which is the opposite of what it means. */
+.chan .fill.empty { min-width: 0; }
+.chan .fill.s1 { background: var(--series-1); }
+.chan .fill.s2 { background: var(--series-2); }
+/* The value sits just past the bar end: close enough to belong to the mark,
+   outside it so a short bar can't clip its own label. */
+.chan .val { font-size: 13px; font-variant-numeric: tabular-nums; }
+.chan .val.zero { color: var(--muted); }
+.statrow { display: flex; gap: 28px; flex-wrap: wrap; margin: 4px 0 14px; }
+.stat .n { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.stat .k { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

@@ -137,6 +137,37 @@
     </div>
   </div>
 
+  <!-- Operator-only: where signups come from. Hidden for everyone but
+       'unlimited' accounts, and the API refuses them anyway. -->
+  <div class="card" id="attrcard" style="display:none">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0">Where signups come from</h2>
+      <span style="flex:1"></span>
+      <select id="attrrange" style="width:auto">
+        <option value="">All time</option>
+        <option value="90">Last 90 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="7">Last 7 days</option>
+      </select>
+    </div>
+    <p class="muted">First touch — the channel that brought someone to the site, credited at
+      the account they eventually created.</p>
+
+    <div class="statrow" id="attrstats"></div>
+    <div class="legend">
+      <span><i style="background:var(--series-1)"></i> Signups</span>
+      <span><i style="background:var(--series-2)"></i> Now paying</span>
+    </div>
+    <div class="chart" id="attrchart"></div>
+    <p class="muted" id="attrempty" style="display:none">No signups in this window.</p>
+
+    <!-- Table view: the exact numbers, plus the campaign breakdown the chart
+         collapses into its channel bars. -->
+    <table id="attrtable" style="margin-top:16px"><thead><tr>
+      <th>Channel</th><th>Campaign</th><th>Signups</th><th>Now paying</th><th>Rate</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
   <div class="card">
     <h2 id="testsheading">Your tests</h2>
     <table id="tests"><thead><tr>

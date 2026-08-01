@@ -160,6 +160,12 @@ ensureColumn('tests', 'backend_config', 'TEXT');
 ensureColumn('tests', 'team_id', 'INTEGER REFERENCES teams(id)');
 // Which cadence the user's individual subscription renews on ('month'|'year').
 ensureColumn('users', 'billing_interval', 'TEXT');
+// First-touch advertising attribution, stamped at signup from the cookie set
+// in lib/attribution.js. NULL for accounts created before this shipped and for
+// anyone who reached the login URL without a page view (they report as
+// untracked rather than being folded into 'direct', which would be a lie).
+ensureColumn('users', 'signup_source', 'TEXT');
+ensureColumn('users', 'signup_campaign', 'TEXT');
 // When a paid plan fell back to 'free' (cancelled, or dunning gave up). Drives
 // the retention grace window in lib/retention.js; NULL for accounts that never
 // paid and for accounts currently subscribed.

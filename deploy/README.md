@@ -177,11 +177,94 @@ session cookie is never read on the run origin.
 
 ## Stripe
 
-1. Create one Product with one recurring Price (~$29/mo) → `STRIPE_PRICE_ID`.
-2. Add a webhook endpoint `https://app.<domain>/webhooks/stripe` subscribed to
-   `checkout.session.completed`, `customer.subscription.updated`,
-   `customer.subscription.deleted` → `STRIPE_WEBHOOK_SECRET`.
-3. Enable the no-code Customer Portal in the Stripe dashboard.
+`scripts/stripe-bootstrap.js` provisions the whole Stripe side — 3 products, the 6
+prices `server/lib/prices.js` resolves from env, the webhook endpoint, and a Customer
+Portal configuration — and prints the `.env` block. Dry run first; it writes nothing
+without `--apply`:
+
+```bash
+STRIPE_SECRET_KEY=sk_live_... node scripts/stripe-bootstrap.js --url=https://app.<domain>
+STRIPE_SECRET_KEY=sk_live_... node scripts/stripe-bootstrap.js --url=https://app.<domain> --apply
+```
+
+Re-running is safe: it addresses products by fixed id and prices by `lookup_key`, and
+falls back to matching `metadata.integral_plan` so a catalog built by hand in the
+Dashboard gets adopted rather than duplicated. A price that exists at a *different*
+amount is reported and left alone — reconcile that by hand, since a second price at a
+new amount silently changes what new customers pay.
+
+Two things the script cannot do for you:
+
+- **The webhook signing secret is only returned when the endpoint is created.** If the
+  endpoint already exists, Stripe will not show the secret again — reuse the saved one
+  or roll it in the Dashboard.
+- **Live mode is a different account from a sandbox**, so sandbox price ids are not
+  valid live and vice versa. Run the script once per mode with that mode's key, and
+  keep the two `.env` files apart.
+
+The prices it creates ($20/mo individual, $216/yr, $20/mo team base, $10/mo per extra
+seat, $108/yr) are also hardcoded in `public/landing.html` and `docs/go-to-market.md`.
+Change all three together.
+
+## Promo codes
+
+`scripts/stripe-promo.js` creates a discount and one promotion code per partner. **It
+does not run on the box** — like `stripe-bootstrap.js` it is a Stripe API client, so it
+runs from a laptop with the live key and talks only to `api.stripe.com`. Nothing needs
+deploying: `allow_promotion_codes: true` has been in `server/routes/billing.js` since the
+first commit, so Checkout already renders the code field in production.
+
+```bash
+# Rehearse in a sandbox first — a redeemed code cannot be un-redeemed.
+node --env-file=.env scripts/stripe-promo.js --codes=TESTONE --apply
+
+# Then live.
+STRIPE_SECRET_KEY=sk_live_... node scripts/stripe-promo.js \
+  --codes=ACME,BETAINC --applies-to=integral_individual,integral_team \
+  --expires=2026-12-31 --apply
+```
+
+Defaults are deliberately tight: `--percent=100`, one month, **one redemption per code**,
+and `first_time_transaction` so an acquisition code cannot be redeemed by someone already
+paying. `--max-redemptions=N` and `--allow-existing-customers` loosen them.
+
+### Why `--applies-to` matters
+
+A discount applies to whole **invoices**, not to months, and a coupon can only be
+restricted by *product* — never by billing interval. Each Integral product carries both a
+monthly and a yearly price, so a percent-off coupon cannot be limited to monthly. Redeemed
+against a yearly plan, "100% off for 1 month" zeroes the annual invoice: a free year.
+
+Worse, `integral_team_seat` has no ceiling — its quantity tracks headcount, so a large
+team redeeming on yearly is an unbounded giveaway. Excluding that one product is what
+turns the exposure into a number:
+
+| Flags | Worst case per redemption |
+| --- | --- |
+| `--percent=100` | $216 **plus $108 per extra seat — no ceiling** |
+| `--percent=100 --applies-to=integral_individual,integral_team` | $216 |
+| `--amount-off=2000 --once` | $20 |
+
+The script prints this before it writes anything. Read that line rather than trusting the
+flags to mean what they sound like.
+
+### Verifying a redemption
+
+Plan state moves only when the webhook fires, so a successful Checkout proves nothing on
+its own. After a test purchase, confirm the row actually changed:
+
+```bash
+sqlite3 /opt/integral/app/data/integral.db \
+  "SELECT login, plan, billing_interval, stripe_subscription_id FROM users WHERE login='<you>';"
+```
+
+`plan` should be `individual` (or `team`) with a non-null subscription id. If `plan` is
+still `free` but `stripe_customer_id` is set, Checkout worked and the webhook did not
+land — check **Developers → Webhooks** for non-200 deliveries.
+
+Locally the webhook cannot reach `localhost`, so this always looks broken until you run
+`stripe listen --forward-to localhost:4000/webhooks/stripe` and put *its* signing secret
+(not the Dashboard endpoint's) in `.env`.
 
 ## Retention
 

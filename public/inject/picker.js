@@ -7,7 +7,13 @@
   window.__integralPicker = true;
   if (window.top === window) return;
 
-  var ORIGIN = location.origin;
+  // Origin of the setup page framing us. Under the origin split that is NOT
+  // our own origin (we're served by the run host, setup lives on the
+  // dashboard), and postMessage silently discards a message whose target
+  // origin doesn't match the recipient — so every step would vanish. The
+  // server stamps the right value onto our own <script> tag.
+  var tag = document.currentScript || document.querySelector('script[data-setup-origin]');
+  var PARENT = (tag && tag.getAttribute('data-setup-origin')) || location.origin;
   var mode = 'pick'; // 'pick' | 'browse'
   var hovered = null;
 
@@ -20,7 +26,7 @@
   document.head.appendChild(style);
 
   function post(type, payload) {
-    window.parent.postMessage(Object.assign({ __integral: true, type: type }, payload), ORIGIN);
+    window.parent.postMessage(Object.assign({ __integral: true, type: type }, payload), PARENT);
   }
 
   function esc(s) {
@@ -138,7 +144,7 @@
   }, true);
 
   window.addEventListener('message', function (e) {
-    if (e.origin !== ORIGIN || !e.data || !e.data.__integral) return;
+    if (e.origin !== PARENT || !e.data || !e.data.__integral) return;
     if (e.data.type === 'mode') {
       mode = e.data.mode;
       if (mode !== 'pick' && hovered) hovered.classList.remove('__integral-hover');

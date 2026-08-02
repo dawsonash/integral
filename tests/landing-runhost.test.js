@@ -10,6 +10,7 @@ const http = require('http');
 
 process.env.INTEGRAL_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'integral-test-'));
 process.env.INTEGRAL_RUN_HOST = 'run.test';
+process.env.INTEGRAL_APP_URL = 'http://app.test';
 
 const app = require('../server/app');
 
@@ -42,6 +43,50 @@ function get(p, host) {
       .on('error', reject);
   });
 }
+
+// Requests not carrying a Host of run.test land on the dashboard surface.
+async function createHtmlTest(name) {
+  const login = await fetch(`http://localhost:${port}/auth/dev?login=dev`, {
+    headers: { Accept: 'application/json' },
+    redirect: 'manual',
+  });
+  const cookie = login.headers.getSetCookie()[0].split(';')[0];
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('html', '<!DOCTYPE html><html><body><button id="buy">Buy</button></body></html>');
+  const res = await fetch(`http://localhost:${port}/api/tests`, {
+    method: 'POST',
+    headers: { Cookie: cookie },
+    body: fd,
+  });
+  return { test: await res.json(), cookie };
+}
+
+// ---------------------------------------------------------------------------
+// Cross-origin setup preview. The setup page is on the dashboard, the preview
+// it frames is on the run host, and postMessage between them dies silently
+// unless each side names the other's origin exactly — which looked like
+// "Record steps records nothing" in production. Same-origin dev can't see any
+// of this, so it has to be asserted with the split on.
+
+test('the picker is told the setup page origin, not its own', async () => {
+  const { test: t } = await createHtmlTest('Picker origin');
+  const res = await get(`/t/${t.id}/preview/index.html`, 'run.test');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /data-setup-origin="http:\/\/app\.test"/);
+  // The bug in one line: posting to its own origin is what dropped every step.
+  assert.doesNotMatch(res.body, /data-setup-origin="[^"]*run\.test/);
+});
+
+test('the setup page is told where its preview iframe will actually live', async () => {
+  const { test: t, cookie } = await createHtmlTest('Run origin');
+  const res = await fetch(`http://localhost:${port}/api/tests/${t.id}`, {
+    headers: { Cookie: cookie },
+  });
+  const json = await res.json();
+  // Same listener under a second name, so the port has to survive.
+  assert.equal(json.run_origin, `http://run.test:${port}`);
+});
 
 test('run host never serves the landing page', async () => {
   const res = await get('/', 'run.test');

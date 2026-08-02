@@ -10,6 +10,7 @@ const { teamForUser } = require('../lib/teams');
 const { deleteTestData } = require('../lib/purge');
 const { uploadLimiter } = require('../lib/ratelimit');
 const { signalsFor, validateSignals } = require('../lib/signals');
+const { runOrigin } = require('../lib/origins');
 const { groupPages } = require('../lib/screens');
 const { label: sentimentLabel } = require('../lib/sentiment');
 const {
@@ -268,8 +269,12 @@ router.post('/api/tests/sample', (req, res) => {
   res.json(testJson(getTest.get(id)));
 });
 
+// The setup page's only read of a test. It also frames that test's preview, so
+// hand it the origin that preview will actually be served from — under the
+// origin split it isn't the one the setup page itself came from, and the
+// picker's postMessage traffic has to name it exactly.
 router.get('/api/tests/:id', ownedTest, (req, res) => {
-  res.json(testJson(req.test));
+  res.json({ ...testJson(req.test), run_origin: runOrigin(req) });
 });
 
 // Network calls found in the artifact's code — setup-page suggestions for

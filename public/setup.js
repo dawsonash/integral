@@ -4,6 +4,13 @@
   var frame = document.getElementById('frame');
   var mode = 'pick';
   var test = null;
+  // Origin the preview iframe is served from. Under the origin split (hosted
+  // artifacts live on their own host so they can't reach dashboard cookies)
+  // this is NOT our origin, and every postMessage between us and the picker
+  // has to name it — a mismatched target origin is dropped silently, which
+  // reads as "recording just doesn't add steps". Filled in from the test API;
+  // same-origin until then, which is the whole story in dev.
+  var runOrigin = location.origin;
   // Ordered success-signal chain; the last chip is the terminal action.
   var signals = [];
 
@@ -14,14 +21,15 @@
     $('mode-pick').classList.toggle('active', m === 'pick');
     $('mode-browse').classList.toggle('active', m === 'browse');
     if (frame.contentWindow) {
-      frame.contentWindow.postMessage({ __integral: true, type: 'mode', mode: m }, location.origin);
+      frame.contentWindow.postMessage({ __integral: true, type: 'mode', mode: m }, runOrigin);
     }
   }
   $('mode-pick').onclick = function () { setMode('pick'); };
   $('mode-browse').onclick = function () { setMode('browse'); };
 
   window.addEventListener('message', function (e) {
-    if (e.origin !== location.origin || !e.data || !e.data.__integral) return;
+    if (e.origin !== runOrigin || e.source !== frame.contentWindow) return;
+    if (!e.data || !e.data.__integral) return;
     if (e.data.type === 'pickerReady') {
       $('curpage').textContent = 'Screen: ' + (e.data.page || test.entry_path);
       setMode(mode); // re-send mode after navigation
@@ -89,8 +97,10 @@
   };
   $('entry_path').onchange = function () { loadPreview(this.value); };
 
+  // Absolute against runOrigin, not relative: a relative src would load from
+  // the dashboard and eat a redirect to the run host on every screen.
   function loadPreview(page) {
-    frame.src = '/t/' + testId + '/preview/' + (page || '');
+    frame.src = runOrigin + '/t/' + testId + '/preview/' + (page || '');
   }
 
   function payload() {
@@ -335,6 +345,7 @@
     .then(function (r) { return r.json(); })
     .then(function (t) {
       test = t;
+      if (t.run_origin) runOrigin = t.run_origin;
       render();
       loadPreview(t.entry_path);
       loadSuggestions();

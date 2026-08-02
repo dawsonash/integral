@@ -9,6 +9,7 @@ const { isServerTest } = require('../lib/sandbox/classify');
 const sandboxes = require('../lib/sandbox/registry');
 const { proxyRequest, sandboxErrorPage } = require('../lib/sandbox/proxy');
 const { signalsFor } = require('../lib/signals');
+const { appOrigin } = require('../lib/origins');
 const sentiment = require('../lib/sentiment');
 const { planFor, scopeFor, monthStart } = require('../lib/plans');
 const { sendEmail } = require('../lib/email');
@@ -62,9 +63,17 @@ router.all('/t/:testId/app/{*path}', testOr404, (req, res) =>
   serveTestee(req, res, 'app', '<script src="/__integral/recorder.js"></script>')
 );
 
-// Setup preview mode: element picker injected.
+// Setup preview mode: element picker injected. Unlike the recorder, the picker
+// reports to a parent on the *other* origin (the dashboard hosts the setup
+// page, this response comes from the run host), so it has to be told which
+// origin to postMessage — it can't infer one: Referrer-Policy is no-referrer.
 router.all('/t/:testId/preview/{*path}', testOr404, (req, res) =>
-  serveTestee(req, res, 'preview', '<script src="/__integral/picker.js"></script>')
+  serveTestee(
+    req,
+    res,
+    'preview',
+    `<script src="/__integral/picker.js" data-setup-origin="${escapeHtml(appOrigin(req))}"></script>`
+  )
 );
 
 // Plain view (heatmap background): no script injection beyond the mocks.

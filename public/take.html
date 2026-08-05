@@ -35,8 +35,13 @@
     display: none; background: #1a1a2e; color: #fff; padding: 10px 16px;
     align-items: center; gap: 14px; flex-wrap: wrap;
   }
+  /* A wrapper, not a layer: on a wide screen it lays its children out exactly
+     as the bar itself used to, so the desktop taskbar is unchanged. */
+  #taskpanel { display: flex; flex: 1; align-items: center; gap: 14px; flex-wrap: wrap; }
   #taskbar .prompt { flex: 1; min-width: 200px; font-size: 14px; }
   #taskbar .prompt b { color: #fdba74; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; display: block; }
+  /* Both are the collapsed-on-mobile treatment only. */
+  #taskfab, #taskpanel .tryint { display: none; }
   #stage { flex: 1; display: none; position: relative; }
   #appframe { width: 100%; height: 100%; border: 0; display: block; }
   #overlay {
@@ -49,13 +54,55 @@
   .seq-scale button.sel { background: var(--accent); color: #fff; border-color: var(--accent); }
   .seq-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
   #giveup { background: none; border-color: #3f3f5e; color: #c7c7d9; font-size: 13px; }
+
+  /* On a phone the bar spent a fifth of the viewport on two lines that never
+     change, and the app under test — the thing being measured — got what was
+     left. Same element, re-laid as a control that floats over the app and
+     collapses out of the way. The taker has just read the task on the consent
+     gate, so it opens closed. */
+  @media (max-width: 640px) {
+    #taskbar {
+      position: fixed; z-index: 40; left: auto; right: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      padding: 0; background: none;
+      /* Panel above the button it belongs to, without moving either in the
+         DOM — the toggle should still come first for a screen reader. */
+      flex-direction: column-reverse; align-items: flex-end; gap: 8px;
+    }
+    #taskfab {
+      display: flex; align-items: center; gap: 7px;
+      padding: 11px 16px; border: 0; border-radius: 999px;
+      background: #1a1a2e; color: #fff; font-size: 14px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+    }
+    #taskfab .mark { color: #fdba74; }
+    #taskpanel {
+      display: none; width: min(78vw, 320px);
+      flex-direction: column; align-items: stretch; gap: 12px;
+      padding: 14px; border-radius: 12px; background: #1a1a2e;
+      box-shadow: 0 6px 22px rgba(0, 0, 0, .4);
+    }
+    #taskbar.open #taskpanel { display: flex; }
+    /* The desktop bar's 200px floor would force the panel wider than the phone. */
+    #taskbar .prompt { flex: none; min-width: 0; }
+    #giveup { width: 100%; }
+    #taskpanel .tryint {
+      display: block; text-align: center; font-size: 12px; color: #a5a5bb;
+    }
+  }
 </style>
 </head>
 <body>
   <div id="gate"><div class="card" id="gatecard">Loading…</div></div>
   <div id="taskbar">
-    <div class="prompt"><b id="taskbarlabel">Your task</b><span id="taskprompt"></span></div>
-    <button id="giveup">I couldn't do it — give up</button>
+    <button id="taskfab" aria-expanded="false" aria-controls="taskpanel">
+      <span class="mark" aria-hidden="true">◱</span><span id="fablabel">Your task</span>
+    </button>
+    <div id="taskpanel">
+      <div class="prompt"><b id="taskbarlabel">Your task</b><span id="taskprompt"></span></div>
+      <button id="giveup">I couldn't do it — give up</button>
+      <a class="tryint" id="tryintegralbar" target="_blank" rel="noopener">Try Integral</a>
+    </div>
   </div>
   <div id="stage"><iframe id="appframe" title="App under test"></iframe></div>
   <div id="overlay"><div class="card" id="overlaycard"></div></div>

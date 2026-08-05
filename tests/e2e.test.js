@@ -440,3 +440,57 @@ test('give-up path records a completed unsuccessful session', { timeout: 60000 }
   assert.equal(results.metrics.succeeded, 0);
   assert.equal(results.metrics.gaveUp, 1);
 });
+
+// The taskbar is the same element at both sizes, so the thing worth pinning is
+// that the phone layout hands the whole viewport to the app under test and
+// still reaches give-up — a collapsed panel that trapped the taker in a session
+// they couldn't end would be a much worse bug than the one it fixed.
+test('on a phone the task collapses to a button and gives the app the viewport', { timeout: 60000 }, async () => {
+  const t = await createDemoTest();
+  await fetch(`${base}/api/tests/${t.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({
+      task_prompt: 'Find the pricing page',
+      success_type: 'click',
+      success_selector: '#nonexistent',
+      status: 'live',
+    }),
+  });
+
+  const page = await browser.newPage();
+  await page.setUserAgent('integral-e2e-mobile');
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await page.goto(`${base}/t/${t.id}`, { waitUntil: 'networkidle0' });
+  await page.click('#consent');
+  // #appframe is in the static shell, so waiting on it would race the session
+  // POST that reveals the stage. The taskbar is what the session actually turns on.
+  await page.waitForSelector('#taskbar', { visible: true });
+
+  const shown = (sel) => page.$eval(sel, (el) => getComputedStyle(el).display !== 'none');
+  assert.equal(await shown('#taskfab'), true);
+  assert.equal(await shown('#taskpanel'), false, 'panel starts collapsed');
+  assert.equal(
+    await page.$eval('#stage', (el) => el.getBoundingClientRect().height),
+    844,
+    'the bar no longer takes a band off the top'
+  );
+
+  await page.click('#taskfab');
+  assert.equal(await shown('#taskpanel'), true);
+  assert.equal(await page.$eval('#taskfab', (el) => el.getAttribute('aria-expanded')), 'true');
+  assert.match(await page.$eval('#taskprompt', (el) => el.textContent), /Find the pricing page/);
+  assert.equal(await shown('#tryintegralbar'), true);
+
+  const af = await (await page.$('#appframe')).contentFrame();
+  await af.waitForSelector('h1');
+  await af.hover('h1');
+  await new Promise((r) => setTimeout(r, 3200));
+  await page.click('#giveup');
+  await page.waitForSelector('#overlay', { visible: true });
+  await page.close();
+
+  const m = (await (await fetch(`${base}/api/tests/${t.id}/results`, { headers: { Cookie: cookie } })).json()).metrics;
+  assert.equal(m.completed, 1);
+  assert.equal(m.gaveUp, 1);
+});

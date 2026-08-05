@@ -74,6 +74,9 @@
     taskDoneAt = Date.now();
     pendingOutcome = { success: success, gaveUp: gaveUp };
     document.getElementById('taskbarlabel').textContent = 'Task complete';
+    // Mirrored onto the collapsed mobile button: with the panel shut, the
+    // button's label is the only thing saying the task is behind them.
+    document.getElementById('fablabel').textContent = 'Task complete';
     document.getElementById('taskprompt').textContent = 'Feel free to keep exploring, or wrap up when you’re ready.';
     var btn = document.getElementById('giveup');
     btn.textContent = 'I’m done exploring';
@@ -207,6 +210,7 @@
         taskbar.style.display = 'flex';
         stage.style.display = 'block';
         document.getElementById('taskprompt').textContent = config.taskPrompt;
+        document.getElementById('tryintegralbar').href = config.appUrl || '/';
         frame.src = '/t/' + testId + '/app/' + (config.entryPath || '');
       });
   }
@@ -291,6 +295,15 @@
   }
 
   document.getElementById('giveup').onclick = function () { onTaskDone(false, true); };
+
+  // Mobile only — the button is display:none above the breakpoint, where the
+  // panel is the bar and is always open.
+  var taskfab = document.getElementById('taskfab');
+  taskfab.onclick = function () {
+    var open = taskbar.className.indexOf('open') === -1;
+    taskbar.className = open ? 'open' : '';
+    taskfab.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
 
   fetch(api + '/config')
     .then(function (r) { return r.json(); })

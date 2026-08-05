@@ -165,9 +165,14 @@
       '<h1>' + escapeHtml(config.name) + '</h1>' +
       '<p>You’re about to try a short task in a prototype. It usually takes a couple of minutes.</p>' +
       task +
-      '<p class="muted gate-consent">This session is recorded for usability research (your clicks and movements — anything you type is masked; ' +
-      '<a href="/privacy" target="_blank">privacy policy</a>). Continue?</p>' +
-      '<button class="btn-primary" id="consent">Continue</button>';
+      '<button class="btn-primary" id="consent">Continue</button>' +
+      '<p class="muted gate-links">' +
+      '<a href="/privacy" target="_blank">Privacy policy</a>' +
+      '<a id="tryintegral" target="_blank" rel="noopener">Try Integral</a>' +
+      '</p>';
+    // href set via the DOM, not the template: escapeHtml leaves quotes alone,
+    // and appUrl falls back to the request's own Host.
+    document.getElementById('tryintegral').href = config.appUrl || '/';
     document.getElementById('consent').onclick = config.screenerEnabled ? showScreener : startSession;
   }
 

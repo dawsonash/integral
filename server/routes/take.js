@@ -124,6 +124,9 @@ router.get('/api/take/:testId/config', testOr404, (req, res) => {
     open: t.status === 'live' && done < t.response_cap,
     entryPath: t.entry_path,
     taskPrompt: t.task_prompt,
+    // The gate's "Try Integral" link. Absolute, because the run host serves
+    // tests only — a relative / there would 404 rather than reach marketing.
+    appUrl: appOrigin(req),
     signals: signalsFor(t),
     // Deprecated flat fields; the shell/recorder read only `signals`.
     successType: t.success_type,

@@ -102,9 +102,10 @@ test('full loop: setup UI picker → launch → testee flow → results', { time
   await tester.setViewport({ width: 1280, height: 800 });
   await tester.goto(`${base}/t/${t.id}`, { waitUntil: 'networkidle0' });
 
-  // Consent gate (the spec's one-line recording notice).
+  // Consent gate: the recording notice now lives behind the privacy link.
   const consentText = await tester.$eval('#gatecard', (el) => el.textContent);
-  assert.match(consentText, /recorded for usability research/);
+  assert.match(consentText, /Privacy policy/);
+  assert.match(consentText, /Try Integral/);
   await tester.click('#consent');
   await tester.waitForSelector('#appframe');
 

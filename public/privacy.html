@@ -13,14 +13,15 @@
 <div class="container">
   <div class="card">
     <h1>Privacy policy</h1>
-    <p class="muted">Last updated: July 2026. Questions or requests: see the <a href="/contact">contact page</a>.</p>
+    <p class="muted">Last updated: August 2026. Questions or requests: see the <a href="/contact">contact page</a>.</p>
 
     <h2>The short version</h2>
     <p>Integral records <b>behavior, not content</b>. Test sessions capture clicks, mouse movement,
     scrolling, and timing. Anything a tester types is <b>masked by default</b> — masked values keep
-    their length but not their characters. There are no third-party trackers, ads, or analytics
-    scripts anywhere in the test-taking flow, and taking a test never requires an account,
-    an email address, or a browser permission prompt.</p>
+    their length but not their characters. Integral adds no trackers, ads, or analytics scripts to
+    the test-taking flow and sets no cookies on it, and taking a test never requires an account,
+    an email address, or a browser permission prompt. The prototype itself is uploaded by the test
+    creator and is served as they built it, so any scripts inside it are theirs, not ours.</p>
 
     <h2>If you take a test (tester)</h2>
     <ul>
@@ -33,7 +34,9 @@
         visible in the recording).</li>
       <li><b>Consent:</b> recording starts only after you accept the notice on the first screen.</li>
       <li><b>Retention:</b> session recordings are deleted automatically per the test owner's plan
-        (14 days on the free tier, up to 1 year on paid), or earlier if the owner deletes the test.</li>
+        (14 days on the free tier, up to 1 year on paid), or earlier if the owner deletes the test.
+        If a paid plan lapses, its recordings keep the paid retention window for a further 30 days
+        before dropping to the free one.</li>
     </ul>
 
     <h2>If you create tests (account holder)</h2>
@@ -43,15 +46,41 @@
       <li><b>Billing:</b> handled entirely by Stripe. We never see or store card numbers; we store
         only your Stripe customer/subscription identifiers and plan status.</li>
       <li><b>Deletion:</b> deleting your account (dashboard → account → delete) immediately and
-        permanently removes your profile, tests, uploaded artifacts, and every recorded session.
-        For a data export, <a href="/contact">get in touch</a>.</li>
+        permanently removes your profile and every test, uploaded artifact, and recorded session
+        you own. If you belong to a workspace and are not its owner, the tests you created there
+        belong to the workspace and stay with its owner when you leave; ask the owner to delete
+        them, or <a href="/contact">get in touch</a>. Deleting a workspace owner's account deletes
+        the workspace and everything in it. Copies may persist in backups for up to 30 days after
+        deletion before those backups age out. For a data export,
+        <a href="/contact">get in touch</a>.</li>
     </ul>
 
+    <h2>Cookies</h2>
+    <p>The test-taking flow sets no cookies at all. On the dashboard site we set two first-party
+    cookies and no third-party ones: a signed session cookie that keeps you logged in, and an
+    attribution cookie that records which channel you first arrived from (an ad tag, a referring
+    site, or "direct") so we can tell which advertising is worth paying for. It expires after 30
+    days, is discarded once you sign up, holds no cross-site identifier, and nothing identifying is
+    recorded for visitors who never create an account.</p>
+
+    <h2>Site traffic</h2>
+    <p>We count how many pages were viewed on the marketing site each day, so we know how many
+    people saw it. The count is a running total per day and nothing else — no visitor identifier,
+    no session, no page address, no IP address, no browser or device details are stored alongside
+    it, and there is no third-party analytics script anywhere on the site. Two views on the same
+    day cannot be told apart from one person reloading, which means these figures can never be
+    linked back to you and there is nothing here to export or delete on request. Views are not
+    counted while you are signed in.</p>
+
     <h2>Sub-processors</h2>
-    <p>Data is stored on a single server and backed up encrypted. The services that touch data:</p>
+    <p>Data is stored on a single server in the United States. The services that touch data:</p>
     <ul>
-      <li><b>Hosting:</b> Hetzner Online GmbH (server, EU)</li>
-      <li><b>Backups:</b> S3-compatible object storage (encrypted database replicas and artifact archives)</li>
+      <li><b>Hosting:</b> Hetzner Online GmbH — server located in Hillsboro, Oregon, United States</li>
+      <li><b>Backups:</b> S3-compatible object storage (database replicas and archives of uploaded
+        artifacts and session recordings). Transfers are encrypted in transit; at rest they rely on
+        the storage provider's own encryption rather than a key we hold.</li>
+      <li><b>Sign-in:</b> GitHub, Inc. — accounts are created through GitHub OAuth, which is where
+        your username, name, email, and avatar come from</li>
       <li><b>Payments:</b> Stripe, Inc.</li>
       <li><b>Transactional email:</b> Resend, Inc. (login and notification emails only)</li>
     </ul>
@@ -61,6 +90,13 @@
     and legitimate interest (abuse prevention, rate limiting). You may request access, correction,
     or erasure at any time; for tester sessions, contact the person who sent you the test link or
     the operator directly.</p>
+
+    <h2>International transfers</h2>
+    <p>Integral runs on a single server in the United States, and the sub-processors above are US
+    companies. If you are in the EEA or UK, taking a test or holding an account means your data is
+    transferred to and stored in the United States. Where those transfers need a safeguard, they
+    rely on the European Commission's Standard Contractual Clauses. If you would rather your data
+    stay in the EEA, Integral is not the right tool for you today.</p>
 
     <p class="muted">See also the <a href="/terms">terms of service</a>.</p>
   </div>

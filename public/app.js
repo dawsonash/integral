@@ -198,9 +198,88 @@
   // use that same scale — 'now paying' is a subset of 'signups', so scaling
   // them separately would make a channel that converts nobody look identical to
   // one that converts everybody.
+  // 'Aug 4' — the axis and tooltips only ever span the selected window, so the
+  // year would be the same on every label.
+  function shortDay(iso) {
+    var d = new Date(iso + 'T00:00:00Z');
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+
+  function bucketLabel(b) {
+    return b.start === b.end ? shortDay(b.start) : shortDay(b.start) + '–' + shortDay(b.end);
+  }
+
+  // Views over time: one series, drawn as columns on a shared scale set by the
+  // busiest bucket. Every bucket in the window is present even at zero — a
+  // quiet week has to look like a gap in the data, not get closed up.
+  function renderViews(v) {
+    var chart = document.getElementById('viewchart');
+    var axis = document.getElementById('viewaxis');
+    chart.innerHTML = '';
+    axis.innerHTML = '';
+
+    var buckets = (v && v.buckets) || [];
+    var total = v ? v.total : 0;
+    // An all-zero window draws as an empty baseline, which reads as a broken
+    // chart rather than as "nothing happened" — say it in words instead.
+    show('viewempty', !total);
+    show('viewchart', !!total);
+    show('viewaxis', !!total);
+
+    var max = buckets.reduce(function (m, b) { return Math.max(m, b.views); }, 0);
+    // With several buckets tied at the top, labelling all of them restates the
+    // same number across the chart; the first one carries the scale.
+    var peak = buckets.reduce(function (i, b, n) { return b.views > buckets[i].views ? n : i; }, 0);
+
+    buckets.forEach(function (b, n) {
+      var col = document.createElement('div');
+      col.className = 'col';
+      col.title = bucketLabel(b) + ' — ' + b.views + (b.views === 1 ? ' view' : ' views');
+
+      if (n === peak && max) {
+        var lab = document.createElement('span');
+        lab.className = 'peak';
+        lab.textContent = b.views;
+        col.appendChild(lab);
+      }
+
+      var bar = document.createElement('span');
+      bar.className = 'bar' + (b.views ? '' : ' zero');
+      bar.style.height = max ? (b.views / max) * 100 + '%' : '0';
+      col.appendChild(bar);
+      chart.appendChild(col);
+    });
+
+    // Ends only: a tick under every column collides at anything past a fortnight.
+    if (buckets.length) {
+      [bucketLabel(buckets[0]), bucketLabel(buckets[buckets.length - 1])].forEach(function (t) {
+        var s = document.createElement('span');
+        s.textContent = t;
+        axis.appendChild(s);
+      });
+    }
+
+    // Signups predate view counting by a long way, so a window reaching back
+    // past the first counted day puts a handful of views beside years of
+    // signups. Say so there — a window that sits entirely inside the counted
+    // period needs no caveat.
+    var since = document.getElementById('viewsince');
+    var reachesBack = !!v && !!v.since && !!buckets.length && buckets[0].start <= v.since;
+    show('viewsince', reachesBack);
+    if (reachesBack) {
+      since.textContent = 'Page views counted from ' + shortDay(v.since) +
+        ', ' + v.since.slice(0, 4) + '. Nothing was recorded before that, so views and signups' +
+        ' do not cover the same period.';
+    }
+  }
+
   function renderAttribution(j) {
     var stats = document.getElementById('attrstats');
     stats.innerHTML = '';
+    renderViews(j.views);
+    // Views lead the row: they are the denominator the two counts beside them
+    // come out of. 'Conversion' stays signups → paying, not views → paying.
+    stats.appendChild(stat(j.views ? j.views.total : 0, 'page views'));
     stats.appendChild(stat(j.totals.signups, 'signups'));
     stats.appendChild(stat(j.totals.paid, 'now paying'));
     stats.appendChild(stat(pct(j.totals.paid, j.totals.signups), 'conversion'));

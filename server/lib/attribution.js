@@ -5,11 +5,13 @@
 // This is deliberately not an analytics product. It answers one question —
 // which advertising avenue produces signups — with no third-party script, no
 // per-pageview storage, and no cross-site identifier. The entire mechanism is
-// one first-party cookie and two columns on `users`. Nothing is recorded for
-// visitors who never sign up, which is why the privacy policy's "no
+// one first-party cookie and two columns on `users`. Nothing identifying is
+// recorded for visitors who never sign up (lib/pageviews.js adds them to a
+// daily total and nothing else), which is why the privacy policy's "no
 // third-party trackers" claim still holds.
 const { db } = require('../db');
 const { parseCookies } = require('./session');
+const pageviews = require('./pageviews');
 
 const COOKIE = 'integral_attr';
 const MAX_AGE_DAYS = 30;
@@ -78,6 +80,12 @@ function middleware(req, res, next) {
   if (req.isRunHost) return next();
   if (req.method !== 'GET') return next();
   if (!(req.headers.accept || '').includes('text/html')) return next();
+
+  // Aggregate traffic tally (lib/pageviews.js). Above the first-touch check so
+  // a returning visitor's second view still counts as a view — it just doesn't
+  // re-stamp the channel.
+  pageviews.record(req);
+
   // First touch wins: a visitor who arrives via an ad, leaves, and comes back
   // directly is still that ad's signup.
   if (parseCookies(req)[COOKIE]) return next();

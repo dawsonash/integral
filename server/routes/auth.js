@@ -7,6 +7,7 @@ const { planFor, scopeFor, monthStart, graceFor } = require('../lib/plans');
 const { billingConfigured } = require('../lib/prices');
 const teams = require('../lib/teams');
 const attribution = require('../lib/attribution');
+const pageviews = require('../lib/pageviews');
 const { deleteUserData } = require('../lib/purge');
 
 const router = express.Router();
@@ -176,7 +177,11 @@ router.get('/api/me', requireUser, (req, res) => {
 router.get('/api/attribution', requireUser, (req, res) => {
   if (req.user.plan !== 'unlimited') return res.status(403).json({ error: 'forbidden' });
   const days = Number(req.query.days);
-  res.json(attribution.report({ days: Number.isFinite(days) && days > 0 ? days : null }));
+  const window = { days: Number.isFinite(days) && days > 0 ? days : null };
+  // Traffic rides along on the same request and the same window: views and the
+  // signups they produced are one card, and two endpoints could disagree about
+  // which range they answered for.
+  res.json({ ...attribution.report(window), views: pageviews.series(window) });
 });
 
 // Data deletion = account deletion (GDPR minimum): removes the user and every

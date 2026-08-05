@@ -148,7 +148,12 @@ a { color: var(--accent); }
 :root {
   --series-1: #1d4ed8; /* signups */
   --series-2: #c2410c; /* of those, now paying */
+  --series-3: #0d9488; /* page views — a different measure, so a third hue */
 }
+/* Sub-headings inside the operator card: two charts under one h2, each needing
+   a name of its own without competing with the card title. */
+#attrcard h3 { font-size: 14px; margin: 22px 0 4px; }
+#attrcard h3 + .muted { margin-top: 0; }
 .legend { display: flex; gap: 16px; align-items: center; font-size: 13px; color: var(--muted); }
 .legend span { display: flex; gap: 6px; align-items: center; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
@@ -174,6 +179,34 @@ a { color: var(--accent); }
    outside it so a short bar can't clip its own label. */
 .chan .val { font-size: 13px; font-variant-numeric: tabular-nums; }
 .chan .val.zero { color: var(--muted); }
+/* Traffic over time. One series, so no legend — the heading above it is the
+   only label identity needs. Columns share the chart's height as their scale
+   and sit on a single hairline baseline; the slot stretches to fill the width
+   while the bar itself stays capped, so seven days read as seven columns
+   rather than one clump at the left edge. Top padding is the peak label's
+   room. */
+.tchart {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 140px; padding-top: 18px; max-width: 780px; margin: 14px 0 0;
+  border-bottom: 1px solid var(--line);
+}
+.tchart .col {
+  flex: 1 1 0; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+}
+.tchart .bar {
+  flex: none; width: 100%; max-width: 24px; min-height: 2px;
+  background: var(--series-3); border-radius: 4px 4px 0 0;
+}
+/* A day with no views is nothing at all: a stub bar would read as "a few". */
+.tchart .bar.zero { background: none; min-height: 0; }
+/* Only the peak is labelled — a number over every column is noise, and the
+   tooltip carries the rest. */
+.tchart .peak { font-size: 12px; color: var(--muted); line-height: 1.3; white-space: nowrap; }
+.taxis {
+  display: flex; justify-content: space-between; max-width: 780px;
+  font-size: 12px; color: var(--muted); margin-top: 6px;
+}
 .statrow { display: flex; gap: 28px; flex-wrap: wrap; margin: 4px 0 14px; }
 .stat .n { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
 .stat .k { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

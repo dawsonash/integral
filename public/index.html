@@ -150,10 +150,22 @@
         <option value="7">Last 7 days</option>
       </select>
     </div>
+    <div class="statrow" id="attrstats"></div>
+
+    <!-- Traffic: everyone who looked, not just the ones who signed up. Counted
+         as a daily total with no visitor record — see server/lib/pageviews.js. -->
+    <h3>Site traffic</h3>
+    <p class="muted">Page views by signed-out visitors, counted as a daily total.
+      Known crawlers excluded.</p>
+    <div class="tchart" id="viewchart"></div>
+    <div class="taxis" id="viewaxis"></div>
+    <p class="muted" id="viewsince" style="display:none"></p>
+    <p class="muted" id="viewempty" style="display:none">No page views recorded yet.</p>
+
+    <h3>Signups by channel</h3>
     <p class="muted">First touch — the channel that brought someone to the site, credited at
       the account they eventually created.</p>
 
-    <div class="statrow" id="attrstats"></div>
     <div class="legend">
       <span><i style="background:var(--series-1)"></i> Signups</span>
       <span><i style="background:var(--series-2)"></i> Now paying</span>

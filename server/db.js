@@ -123,6 +123,14 @@ CREATE TABLE IF NOT EXISTS interactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_interactions_session ON interactions(session_id);
+
+-- Aggregate page-view tallies (server/lib/pageviews.js). One row per UTC day,
+-- holding a count and nothing else: no visitor id, no path, no user agent. The
+-- traffic graph is the only reader.
+CREATE TABLE IF NOT EXISTS pageviews (
+  day TEXT PRIMARY KEY,
+  views INTEGER NOT NULL DEFAULT 0
+);
 `);
 
 // CREATE TABLE IF NOT EXISTS never alters an existing table, so columns added
